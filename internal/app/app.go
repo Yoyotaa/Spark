@@ -76,6 +76,11 @@ func (a *App) Startup(ctx context.Context) {
 		a.debugf("voice: %q", tts.Voice())
 		a.tts = tts
 	}
+	if a.llm != nil {
+		log.Printf("ai: %s", a.llm.Name())
+	} else {
+		log.Printf("ai: non configurée (SPARK_LLM_API_KEY absente de l'environnement)")
+	}
 }
 
 // DomReady runs once the native window and the webview exist.

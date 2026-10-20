@@ -67,7 +67,12 @@ func (a *App) Status() Status {
 // withScreen is set. A new question interrupts the previous answer (text and
 // voice). It returns once the request is accepted; the answer streams through
 // EventDelta / EventDone.
-func (a *App) Ask(text string, withScreen bool) (Turn, error) {
+func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
+	defer func() {
+		if err != nil {
+			a.debugf("ai: question refusée : %v", err)
+		}
+	}()
 	if a.llm == nil {
 		return Turn{}, errors.New("IA non configurée : lance Spark avec SPARK_LLM_API_KEY (clé gratuite sur aistudio.google.com)")
 	}
@@ -89,11 +94,10 @@ func (a *App) Ask(text string, withScreen bool) (Turn, error) {
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.askID++
-	turn := Turn{ID: a.askID}
+	turn = Turn{ID: a.askID}
 
 	var frame *vision.Frame
 	if withScreen {
-		var err error
 		frame, turn.Capture, err = a.capture(ctx)
 		if err != nil {
 			cancel()
