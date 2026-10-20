@@ -26,12 +26,12 @@ export default function App() {
   )
 
   // Keyboard focus follows the chat: taken on open, handed back on close.
-  const mounted = useRef(false)
+  // Compares with the last notified value rather than skipping the first run:
+  // StrictMode runs effects twice in dev.
+  const notified = useRef(chatOpen)
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true
-      return
-    }
+    if (notified.current === chatOpen) return
+    notified.current = chatOpen
     notifyChatOpen(chatOpen)
   }, [chatOpen])
 

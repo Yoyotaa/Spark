@@ -1,5 +1,6 @@
 #import <Carbon/Carbon.h>
 #import <Foundation/Foundation.h>
+#include <wctype.h>
 #include "hotkey_darwin.h"
 #include "_cgo_export.h"
 
@@ -22,6 +23,38 @@ static void onMain(dispatch_block_t block) {
 	} else {
 		dispatch_sync(dispatch_get_main_queue(), block);
 	}
+}
+
+// Finds the virtual key code that types `ch` with the current keyboard
+// layout (AZERTY, QWERTZ...): Carbon hotkeys are bound to physical keys.
+// Returns -1 if no key produces it.
+int sparkKeyCodeForChar(uint16_t ch) {
+	__block int result = -1;
+	onMain(^{ // Text Input Sources must be queried on the main thread.
+		TISInputSourceRef src = TISCopyCurrentKeyboardLayoutInputSource();
+		CFDataRef data = src ? TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) : NULL;
+		if (data == NULL) { // e.g. a Chinese/Japanese input method is active
+			if (src) CFRelease(src);
+			src = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
+			data = src ? TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) : NULL;
+		}
+		if (data != NULL) {
+			const UCKeyboardLayout *layout = (const UCKeyboardLayout *)CFDataGetBytePtr(data);
+			UniChar want = (UniChar)towlower(ch);
+			for (UInt16 code = 0; code < 128 && result < 0; code++) {
+				UInt32 dead = 0;
+				UniChar chars[4];
+				UniCharCount len = 0;
+				OSStatus st = UCKeyTranslate(layout, code, kUCKeyActionDown, 0, LMGetKbdType(),
+				                             kUCKeyTranslateNoDeadKeysBit, &dead, 4, &len, chars);
+				if (st == noErr && len == 1 && towlower(chars[0]) == want) {
+					result = code;
+				}
+			}
+		}
+		if (src) CFRelease(src);
+	});
+	return result;
 }
 
 int sparkRegisterHotkey(uint32_t id, uint32_t keyCode, uint32_t modifiers) {

@@ -23,9 +23,10 @@ const (
 	controlKey = 0x1000
 )
 
-// Virtual key codes of the ANSI layout (HIToolbox/Events.h). They follow the
-// physical keyboard, not the alphabet.
-var keyCodes = map[Key]uint32{
+// Virtual key codes of the ANSI (QWERTY) layout, from HIToolbox/Events.h.
+// Only a fallback: codes are physical positions, so letters are first
+// resolved through the active layout (AZERTY 'A' is QWERTY 'Q').
+var ansiKeyCodes = map[Key]uint32{
 	'A': 0x00, 'S': 0x01, 'D': 0x02, 'F': 0x03, 'H': 0x04, 'G': 0x05,
 	'Z': 0x06, 'X': 0x07, 'C': 0x08, 'V': 0x09, 'B': 0x0B, 'Q': 0x0C,
 	'W': 0x0D, 'E': 0x0E, 'R': 0x0F, 'Y': 0x10, 'T': 0x11, 'O': 0x1F,
@@ -38,6 +39,16 @@ var (
 	handlers        = map[uint32]func(){}
 	nextID   uint32 = 1
 )
+
+func keyCode(k Key) (uint32, bool) {
+	if k != KeySpace {
+		if code := C.sparkKeyCodeForChar(C.uint16_t(k)); code >= 0 {
+			return uint32(code), true
+		}
+	}
+	code, ok := ansiKeyCodes[k]
+	return code, ok
+}
 
 //export sparkHotkeyFired
 func sparkHotkeyFired(id C.uint32_t) {
@@ -56,7 +67,7 @@ func listen(ctx context.Context, bindings []Binding) error {
 	defer mu.Unlock()
 
 	for _, b := range bindings {
-		code, ok := keyCodes[b.Key]
+		code, ok := keyCode(b.Key)
 		if !ok {
 			return fmt.Errorf("hotkey: unsupported key %q", rune(b.Key))
 		}
