@@ -25,7 +25,7 @@ wails dev
 | Variable | Effet |
 |---|---|
 | `SPARK_LLM_API_KEY` (ou `GEMINI_API_KEY`) | clé de l'IA (voir ci-dessous) |
-| `SPARK_LLM_MODEL` | modèle Gemini, `gemini-3.8-flash` par défaut |
+| `SPARK_LLM_MODEL` | modèle Gemini, `gemini-3.6-flash` par défaut (`gemini-3.5-flash-lite` : ~4× plus rapide, moins fin) |
 | `SPARK_DEBUG=1` | logs du click-through et des raccourcis, zones cliquables en pointillés jaunes |
 | `SPARK_MUTE=1` | pas de voix |
 | `SPARK_VOICE="Audrey (Premium)"` | force une voix système |

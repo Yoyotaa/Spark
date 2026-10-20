@@ -108,8 +108,14 @@ question ─► capture (≈110-200 ms) ─► Gemini streamGenerateContent (SSE
 ```
 
 - **Fournisseur** : interface `ai.Provider` ; implémentation Gemini en REST pur
-  (pas de SDK), clé dans l'en-tête `x-goog-api-key`, `thinking_level: low` pour
-  la latence (retiré automatiquement si le modèle le refuse).
+  (pas de SDK), clé dans l'en-tête `x-goog-api-key`.
+- **Modèle** : `gemini-3.6-flash` par défaut. Mesures sur le niveau gratuit
+  (oct. 2026, requête texte courte) : 3.6 Flash ≈ 1,7-3 s, 3.5 Flash-Lite
+  ≈ 0,5 s, 3.8 Flash ≈ 40 s (file d'attente). Le réglage `thinking_level` ne
+  fait rien gagner sur 3.6 et ralentit Flash-Lite : il n'est pas envoyé. Sans
+  en-têtes de réponse au bout de 20 s, l'erreur suggère de changer de modèle.
+- **Test réel** : `SPARK_AI_LIVE=1 go test -run Live -v ./internal/ai` (une
+  requête texte, consomme le quota).
 - **Vision dynamique** : chaque question part avec une capture prise à
   l'instant, sans action de l'utilisateur ; l'œil du chat coupe la vision.
 - **Historique** : 12 tours max, en texte seul. Seule la question courante

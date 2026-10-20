@@ -75,34 +75,6 @@ func TestGeminiStream(t *testing.T) {
 	if img["mime_type"] != "image/jpeg" || img["data"] != base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8}) {
 		t.Fatalf("bad image part: %v", img)
 	}
-	if body["generation_config"].(map[string]any)["thinking_level"] != "low" {
-		t.Fatalf("thinking level not sent: %v", body["generation_config"])
-	}
-}
-
-func TestGeminiDropsUnsupportedThinking(t *testing.T) {
-	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if _, has := body["generation_config"]; has {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, `{"error":{"code":400,"message":"Unknown name \"thinking_level\"","status":"INVALID_ARGUMENT"}}`)
-			return
-		}
-		fmt.Fprint(w, sse("ok"))
-	}))
-	defer srv.Close()
-
-	g := NewGemini("k", "m", srv.URL)
-	ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if text, err := collect(t, ch); err != nil || text != "ok" || calls != 2 {
-		t.Fatalf("got %q, %v after %d calls", text, err, calls)
-	}
 }
 
 func TestGeminiFriendlyErrors(t *testing.T) {

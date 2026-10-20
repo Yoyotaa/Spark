@@ -10,13 +10,18 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
 const (
-	geminiBaseURL      = "https://generativelanguage.googleapis.com/v1beta"
-	DefaultGeminiModel = "gemini-3.8-flash"
+	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+	// Measured on the free tier (Oct 2026): 3.6 Flash answers in ~2-3 s,
+	// 3.5 Flash-Lite in ~0.5 s, while 3.8 Flash was queued for ~40 s.
+	DefaultGeminiModel = "gemini-3.6-flash"
+
+	// Without response headers after this delay, the model is considered
+	// saturated: better to tell the user than to hang.
+	headerTimeout = 20 * time.Second
 )
 
 // Gemini calls the Google Generative Language REST API (streamGenerateContent
@@ -26,11 +31,6 @@ type Gemini struct {
 	model   string
 	baseURL string
 	client  *http.Client
-
-	// Thinking costs latency; "low" keeps answers snappy. If the model
-	// rejects the field, it is dropped for the rest of the session.
-	thinkingLevel string
-	noThinking    atomic.Bool
 }
 
 // NewGemini creates a client; empty model and baseURL select the defaults.
@@ -42,15 +42,14 @@ func NewGemini(apiKey, model, baseURL string) *Gemini {
 		baseURL = geminiBaseURL
 	}
 	return &Gemini{
-		apiKey:        apiKey,
-		model:         model,
-		baseURL:       strings.TrimSuffix(baseURL, "/"),
-		thinkingLevel: "low",
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: strings.TrimSuffix(baseURL, "/"),
 		// No global timeout: a stream may legitimately last a while; the
 		// caller's context bounds it.
 		client: &http.Client{Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			ResponseHeaderTimeout: 30 * time.Second,
+			ResponseHeaderTimeout: headerTimeout,
 			IdleConnTimeout:       90 * time.Second,
 			ForceAttemptHTTP2:     true,
 		}},
@@ -78,7 +77,6 @@ type geminiContent struct {
 type geminiRequest struct {
 	SystemInstruction *geminiContent  `json:"system_instruction,omitempty"`
 	Contents          []geminiContent `json:"contents"`
-	GenerationConfig  map[string]any  `json:"generation_config,omitempty"`
 }
 
 type geminiResponse struct {
@@ -116,9 +114,6 @@ func (g *Gemini) body(system string, history []Message) ([]byte, error) {
 			req.Contents = append(req.Contents, c)
 		}
 	}
-	if g.thinkingLevel != "" && !g.noThinking.Load() {
-		req.GenerationConfig = map[string]any{"thinking_level": g.thinkingLevel}
-	}
 	return json.Marshal(req)
 }
 
@@ -133,34 +128,35 @@ func (g *Gemini) Stream(ctx context.Context, system string, history []Message) (
 }
 
 func (g *Gemini) post(ctx context.Context, system string, history []Message) (*http.Response, error) {
-	for attempt := 0; ; attempt++ {
-		body, err := g.body(system, history)
-		if err != nil {
-			return nil, err
-		}
-		url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, g.model)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-goog-api-key", g.apiKey) // header, never in the URL/logs
-
-		resp, err := g.client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("Gemini injoignable : %w", err)
-		}
-		if resp.StatusCode == http.StatusOK {
-			return resp, nil
-		}
-		apiErr := decodeError(resp)
-		if resp.StatusCode == http.StatusBadRequest && attempt == 0 && !g.noThinking.Load() &&
-			strings.Contains(strings.ToLower(apiErr.Error.Message), "thinking") {
-			g.noThinking.Store(true)
-			continue
-		}
-		return nil, friendlyError(resp.StatusCode, apiErr)
+	body, err := g.body(system, history)
+	if err != nil {
+		return nil, err
 	}
+	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, g.model)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", g.apiKey) // header, never in the URL/logs
+
+	resp, err := g.client.Do(req)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return nil, ctx.Err()
+	case err != nil && isTimeout(err):
+		return nil, fmt.Errorf("%s ne répond pas (modèle saturé ?) : essaie un autre modèle via SPARK_LLM_MODEL", g.model)
+	case err != nil:
+		return nil, fmt.Errorf("Gemini injoignable : %w", err)
+	case resp.StatusCode != http.StatusOK:
+		return nil, friendlyError(resp.StatusCode, decodeError(resp))
+	}
+	return resp, nil
+}
+
+func isTimeout(err error) bool {
+	var t interface{ Timeout() bool }
+	return errors.As(err, &t) && t.Timeout()
 }
 
 func decodeError(resp *http.Response) geminiError {
