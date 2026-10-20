@@ -20,6 +20,52 @@ export namespace app {
 	        this.dataUrl = source["dataUrl"];
 	    }
 	}
+	export class Status {
+	    ai: string;
+	    aiReady: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ai = source["ai"];
+	        this.aiReady = source["aiReady"];
+	    }
+	}
+	export class Turn {
+	    id: number;
+	    capture?: Capture;
+	
+	    static createFrom(source: any = {}) {
+	        return new Turn(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.capture = this.convertValues(source["capture"], Capture);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

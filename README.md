@@ -24,12 +24,26 @@ wails dev
 
 | Variable | Effet |
 |---|---|
+| `SPARK_LLM_API_KEY` (ou `GEMINI_API_KEY`) | clé de l'IA (voir ci-dessous) |
+| `SPARK_LLM_MODEL` | modèle Gemini, `gemini-3.8-flash` par défaut |
 | `SPARK_DEBUG=1` | logs du click-through et des raccourcis, zones cliquables en pointillés jaunes |
 | `SPARK_MUTE=1` | pas de voix |
 | `SPARK_VOICE="Audrey (Premium)"` | force une voix système |
 
 Itérer sur l'UI dans un navigateur (faux fond d'écran, accueil simulé) :
 `npm --prefix frontend run dev` puis http://localhost:5173 (`?debug` pour les zones).
+
+### IA (Gemini)
+
+1. Crée une clé gratuite sur [Google AI Studio](https://aistudio.google.com/apikey).
+2. Ajoute-la à ton shell (jamais dans le repo) : `export SPARK_LLM_API_KEY=...`
+   dans `~/.zshrc`, puis ouvre un nouveau terminal.
+3. `wails dev` : le voyant **IA** du chat s'allume.
+
+Chaque question part avec une capture prise à l'instant (œil du chat pour
+couper la vision). ⚠️ Sur le niveau gratuit, Google peut utiliser les requêtes
+(captures comprises) pour améliorer ses produits : coupe la vision sur les
+écrans sensibles, ou passe au niveau payant.
 
 ### Raccourcis
 
@@ -66,7 +80,7 @@ main.go                 options de fenêtre Wails (frameless, transparente)
 internal/app            pont Wails ↔ modules
 internal/overlay        click-through natif (darwin / windows)
 internal/vision         capture d'écran        (à venir)
-internal/ai             LLM multimodal         (à venir)
+internal/ai             LLM multimodal (Gemini, streaming SSE)
 internal/audio          TTS système (say / SAPI), STT à venir
 internal/hotkey         raccourcis globaux (Carbon / RegisterHotKey)
 internal/config         variables d'env + réglages persistants

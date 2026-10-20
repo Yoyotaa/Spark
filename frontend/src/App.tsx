@@ -4,7 +4,7 @@ import {ChatPanel, type Message} from './components/ChatPanel'
 import {ORB_SIZE, Orb} from './components/Orb'
 import {useDrag} from './hooks/useDrag'
 import * as bridge from './lib/bridge'
-import type {Capture, Point} from './lib/bridge'
+import type {Point} from './lib/bridge'
 import {startRegionTracking} from './overlay/regions'
 
 const MARGIN = 16
@@ -44,6 +44,9 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  const [waiting, setWaiting] = useState(false)
+  const [seeScreen, setSeeScreen] = useState(true)
+  const [aiReady, setAiReady] = useState(false)
   const [bubble, setBubble] = useState<{text: string; key: number} | null>(null)
 
   const chatOpenRef = useRef(chatOpen)
@@ -83,12 +86,52 @@ export default function App() {
   useEffect(
     () =>
       bridge.onSay((text) => {
-        setMessages((m) => [...m, {id: nextId++, from: 'aria', text, at: new Date()}])
+        setMessages((m) => [...m, {id: `say-${nextId++}`, from: 'aria', text, at: new Date()}])
         if (!chatOpenRef.current) setBubble({text, key: nextId++})
       }),
     [],
   )
   useEffect(() => bridge.onSpeaking(setSpeaking), [])
+
+  useEffect(() => {
+    void bridge.status().then((s) => setAiReady(s.aiReady))
+  }, [])
+
+  // Streamed answers: one message per turn, created by its first delta.
+  useEffect(
+    () =>
+      bridge.onDelta(({id, text}) => {
+        setWaiting(false)
+        setMessages((m) => {
+          const key = `turn-${id}`
+          const i = m.findIndex((x) => x.id === key)
+          if (i < 0) return [...m, {id: key, from: 'aria', text, at: new Date(), streaming: true}]
+          const copy = m.slice()
+          copy[i] = {...copy[i], text: copy[i].text + text}
+          return copy
+        })
+      }),
+    [],
+  )
+  useEffect(
+    () =>
+      bridge.onDone(({id, error, interrupted}) => {
+        setMessages((m) => {
+          const key = `turn-${id}`
+          const i = m.findIndex((x) => x.id === key)
+          if (error) {
+            const msg: Message = {id: key, from: 'aria', text: error, at: new Date(), error: true}
+            return i < 0 ? [...m, msg] : m.map((x) => (x.id === key ? msg : x))
+          }
+          if (i < 0) return m
+          const copy = m.slice()
+          copy[i] = {...copy[i], streaming: false, text: copy[i].text + (interrupted ? '…' : '')}
+          return copy
+        })
+        if (error) setWaiting(false)
+      }),
+    [],
+  )
 
   // The bubble lingers a little once A.R.I.A stops talking.
   useEffect(() => {
@@ -107,18 +150,24 @@ export default function App() {
     bridge.setChatOpen(chatOpen)
   }, [chatOpen])
 
-  const send = useCallback((text: string, image?: Capture) => {
-    const at = new Date()
-    // Placeholder until the AI module (phase 3) is wired.
-    const reply = image
-      ? `Capture reçue (${image.width}×${image.height}). Je pourrai l’analyser dès que mon module IA sera connecté.`
-      : 'Mon module d’analyse n’est pas encore connecté. Bientôt.'
-    setMessages((m) => [
-      ...m,
-      {id: nextId++, from: 'user', text, at, image},
-      {id: nextId++, from: 'aria', text: reply, at},
-    ])
-  }, [])
+  const send = useCallback(
+    async (text: string) => {
+      const userId = `user-${nextId++}`
+      setMessages((m) => [...m, {id: userId, from: 'user', text, at: new Date()}])
+      setWaiting(true)
+      try {
+        const turn = await bridge.ask(text, seeScreen)
+        if (turn.capture) {
+          setMessages((m) => m.map((x) => (x.id === userId ? {...x, image: turn.capture} : x)))
+        }
+      } catch (e) {
+        setWaiting(false)
+        const error = e instanceof Error ? e.message : String(e)
+        setMessages((m) => [...m, {id: `err-${nextId++}`, from: 'aria', text: error, at: new Date(), error: true}])
+      }
+    },
+    [seeScreen],
+  )
 
   // Dragging moves the anchor directly (no React render per frame); the
   // state is committed once, on drop.
@@ -153,8 +202,12 @@ export default function App() {
           <ChatPanel
             open={chatOpen}
             speaking={speaking}
+            waiting={waiting}
+            aiReady={aiReady}
+            seeScreen={seeScreen}
             messages={messages}
             onSend={send}
+            onToggleScreen={() => setSeeScreen((v) => !v)}
             onClose={() => setChatOpen(false)}
           />
         </div>

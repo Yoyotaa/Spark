@@ -4,7 +4,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"spark/internal/ai"
 	"spark/internal/audio"
 	"spark/internal/config"
 	"spark/internal/hotkey"
@@ -27,6 +27,8 @@ const (
 	EventVisibility = "spark:visibility"
 	EventSay        = "aria:say"      // text A.R.I.A is saying
 	EventSpeaking   = "aria:speaking" // bool, voice playing
+	EventDelta      = "aria:delta"    // Delta, streamed answer text
+	EventDone       = "aria:done"     // Done, end of an answer
 )
 
 type App struct {
@@ -34,14 +36,19 @@ type App struct {
 	settings *config.Store // nil if the config dir is unusable
 	overlay  *overlay.Controller
 	tts      audio.TTS
+	speakMu  sync.Mutex // one voice at a time
 	vision   *vision.Service
+	llm      ai.Provider // nil without API key
 	visible  atomic.Bool
 	boot     sync.Once
 
-	// lastFrame is the latest screenshot, kept for the AI request that
-	// will follow (phase 3). Guarded by frameMu.
-	frameMu   sync.Mutex
-	lastFrame *vision.Frame
+	// Conversation state, see assistant.go.
+	askMu     sync.Mutex
+	askID     int
+	askCancel context.CancelFunc
+	askDone   chan struct{}
+	convMu    sync.Mutex
+	history   []ai.Message
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -53,6 +60,9 @@ func New(cfg config.Config, settings *config.Store) *App {
 		ov.OnToggle = func(ignoring bool) { log.Printf("overlay: click-through=%v", ignoring) }
 	}
 	a := &App{cfg: cfg, settings: settings, overlay: ov, vision: vision.New(vision.DefaultOptions)}
+	if cfg.LLMAPIKey != "" {
+		a.llm = ai.NewGemini(cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMURL)
+	}
 	a.visible.Store(true)
 	return a
 }
@@ -108,13 +118,34 @@ func (a *App) greet() {
 // say shows text in the UI and speaks it.
 func (a *App) say(text string) {
 	runtime.EventsEmit(a.ctx, EventSay, text)
-	if a.tts == nil {
-		return
+	sentences := make(chan string, 1)
+	sentences <- text
+	close(sentences)
+	a.speakAll(a.ctx, sentences)
+}
+
+// speakAll speaks sentences as they arrive, keeping the "speaking" state up
+// for the whole batch. Once ctx is cancelled it only drains the channel, so
+// producers never block.
+func (a *App) speakAll(ctx context.Context, sentences <-chan string) {
+	a.speakMu.Lock()
+	defer a.speakMu.Unlock()
+
+	started := false
+	for s := range sentences {
+		if a.tts == nil || ctx.Err() != nil {
+			continue
+		}
+		if !started {
+			started = true
+			runtime.EventsEmit(a.ctx, EventSpeaking, true)
+		}
+		if err := a.tts.Speak(ctx, spoken(s)); err != nil && ctx.Err() == nil {
+			log.Printf("tts: %v", err)
+		}
 	}
-	runtime.EventsEmit(a.ctx, EventSpeaking, true)
-	defer runtime.EventsEmit(a.ctx, EventSpeaking, false)
-	if err := a.tts.Speak(a.ctx, spoken(text)); err != nil && a.ctx.Err() == nil {
-		log.Printf("tts: %v", err)
+	if started {
+		runtime.EventsEmit(a.ctx, EventSpeaking, false)
 	}
 }
 
@@ -179,45 +210,6 @@ func (a *App) SetOrbPosition(x, y float64) error {
 		return nil
 	}
 	return a.settings.Update(func(s *config.Settings) { s.Orb = &config.Point{X: x, Y: y} })
-}
-
-// Capture is what the frontend receives after a screenshot.
-type Capture struct {
-	Width   int    `json:"width"`
-	Height  int    `json:"height"`
-	Bytes   int    `json:"bytes"`
-	Millis  int64  `json:"millis"`
-	DataURL string `json:"dataUrl"` // thumbnail source for the chat
-}
-
-const captureTimeout = 5 * time.Second
-
-// CaptureScreen takes a screenshot (without Spark itself) and keeps it as
-// the visual context of the next question to A.R.I.A.
-func (a *App) CaptureScreen() (Capture, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, captureTimeout)
-	defer cancel()
-
-	f, err := a.vision.Capture(ctx)
-	if errors.Is(err, vision.ErrPermission) {
-		vision.RequestPermission()
-		return Capture{}, errors.New("autorise Spark dans Réglages Système › Confidentialité › Enregistrement de l'écran, puis relance l'app")
-	}
-	if err != nil {
-		return Capture{}, err
-	}
-	a.debugf("vision: %dx%d, %d KB in %v", f.Width, f.Height, len(f.Data)>>10, f.Took)
-
-	const prefix = "data:image/jpeg;base64,"
-	url := make([]byte, 0, len(prefix)+(len(f.Data)+2)/3*4)
-	url = f.AppendBase64(append(url, prefix...))
-	c := Capture{Width: f.Width, Height: f.Height, Bytes: len(f.Data), Millis: f.Took.Milliseconds(), DataURL: string(url)}
-
-	a.frameMu.Lock()
-	a.lastFrame.Release()
-	a.lastFrame = f
-	a.frameMu.Unlock()
-	return c, nil
 }
 
 func (a *App) Debug() bool {

@@ -11,6 +11,8 @@ const EventToggleChat = 'aria:toggle-chat'
 const EventVisibility = 'spark:visibility'
 const EventSay = 'aria:say'
 const EventSpeaking = 'aria:speaking'
+const EventDelta = 'aria:delta'
+const EventDone = 'aria:done'
 
 export type Region = Pick<overlay.Rect, 'x' | 'y' | 'w' | 'h'>
 export type Point = {x: number; y: number}
@@ -68,11 +70,29 @@ export function saveOrbPosition(p: Point): void {
 }
 
 export type Capture = Pick<app.Capture, 'width' | 'height' | 'bytes' | 'millis' | 'dataUrl'>
+export type Turn = {id: number; capture?: Capture}
+export type Delta = {id: number; text: string}
+export type Done = {id: number; error?: string; interrupted?: boolean}
+export type Status = {ai: string; aiReady: boolean}
 
-/** Screenshot without Spark itself; rejects with a user-facing message. */
-export async function captureScreen(): Promise<Capture> {
-  if (!inWails) throw new Error('Capture indisponible dans le navigateur')
-  return App.CaptureScreen()
+let fakeTurn = 0
+
+/**
+ * Asks A.R.I.A; resolves once the request is accepted, the answer streams
+ * through onDelta/onDone. Rejects with a user-facing message.
+ */
+export async function ask(text: string, withScreen: boolean): Promise<Turn> {
+  if (inWails) return App.Ask(text, withScreen) as Promise<Turn>
+  // Browser preview: fake a streamed answer.
+  const id = ++fakeTurn
+  const words = 'Aperçu navigateur : je ne vois pas ton écran ici, lance Spark avec wails dev.'.split(' ')
+  words.forEach((w, i) => setTimeout(() => emitLocal(EventDelta, {id, text: (i ? ' ' : '') + w}), 400 + i * 70))
+  setTimeout(() => emitLocal(EventDone, {id}), 450 + words.length * 70)
+  return {id}
+}
+
+export async function status(): Promise<Status> {
+  return inWails ? App.Status() : {ai: 'aperçu', aiReady: false}
 }
 
 export async function isDebug(): Promise<boolean> {
@@ -85,5 +105,9 @@ export const onToggleChat = (cb: () => void) => on(EventToggleChat, cb)
 export const onVisibility = (cb: (visible: boolean) => void) => on(EventVisibility, cb)
 /** A.R.I.A says something (greeting, answers). */
 export const onSay = (cb: (text: string) => void) => on(EventSay, cb)
+/** Streamed answer text. */
+export const onDelta = (cb: (d: Delta) => void) => on(EventDelta, cb)
+/** End of an answer. */
+export const onDone = (cb: (d: Done) => void) => on(EventDone, cb)
 /** A.R.I.A's voice starts or stops. */
 export const onSpeaking = (cb: (speaking: boolean) => void) => on(EventSpeaking, cb)

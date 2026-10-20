@@ -1,28 +1,32 @@
 import {useEffect, useRef, useState, type FormEvent} from 'react'
-import {captureScreen, type Capture} from '../lib/bridge'
+import type {Capture} from '../lib/bridge'
 import {HudCorners} from './HudCorners'
 import {SparkLogo} from './SparkLogo'
 import {Waveform} from './Waveform'
 
 export type Message = {
-  id: number
+  id: string
   from: 'user' | 'aria'
   text: string
   at: Date
   image?: Capture
+  streaming?: boolean
+  error?: boolean
 }
 
 type Props = {
   open: boolean
   speaking: boolean
+  waiting: boolean
+  aiReady: boolean
+  seeScreen: boolean
   messages: Message[]
-  onSend: (text: string, image?: Capture) => void
+  onSend: (text: string) => void
+  onToggleScreen: () => void
   onClose: () => void
 }
 
 const time = (d: Date) => d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})
-
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function Module({name, on}: {name: string; on: boolean}) {
   return (
@@ -42,71 +46,50 @@ function EyeIcon({className}: {className?: string}) {
   )
 }
 
-function Thumbnail({capture, onRemove}: {capture: Capture; onRemove?: () => void}) {
+function Thumbnail({capture}: {capture: Capture}) {
   return (
     <figure className="relative w-fit overflow-hidden rounded-lg border border-spark-cyan/25 bg-black/40">
       <img src={capture.dataUrl} alt="Capture d'écran" className="block max-h-28 max-w-full" draggable={false} />
       <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1 font-mono text-[8.5px] tracking-[0.15em] text-spark-cyan/90">
         {capture.width}×{capture.height} · {Math.round(capture.bytes / 1024)} KO · {capture.millis} MS
       </figcaption>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Retirer la capture"
-          className="absolute top-1 right-1 grid size-5 place-items-center rounded bg-black/60 text-slate-300 hover:text-white"
-        >
-          <svg viewBox="0 0 12 12" className="size-2.5" aria-hidden>
-            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
-      )}
     </figure>
   )
 }
 
 // Stays mounted while closed so the conversation and scroll survive;
 // `hidden` removes it from the layout, hence from the interactive regions.
-export function ChatPanel({open, speaking, messages, onSend, onClose}: Props) {
+export function ChatPanel({
+  open,
+  speaking,
+  waiting,
+  aiReady,
+  seeScreen,
+  messages,
+  onSend,
+  onToggleScreen,
+  onClose,
+}: Props) {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLOListElement>(null)
   const [draft, setDraft] = useState('')
-  const [attachment, setAttachment] = useState<Capture | null>(null)
-  const [capturing, setCapturing] = useState(false)
-  const [visionOk, setVisionOk] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) input.current?.focus()
   }, [open])
 
+  // Follow the stream: scroll on new messages and as the last one grows.
+  const last = messages[messages.length - 1]
   useEffect(() => {
-    list.current?.scrollTo({top: list.current.scrollHeight, behavior: 'smooth'})
-  }, [messages.length, open])
-
-  async function capture() {
-    if (capturing) return
-    setCapturing(true)
-    setError(null)
-    try {
-      setAttachment(await captureScreen())
-      setVisionOk(true)
-    } catch (e) {
-      setError(errorText(e))
-      setVisionOk(false)
-    } finally {
-      setCapturing(false)
-      input.current?.focus()
-    }
-  }
+    list.current?.scrollTo({top: list.current.scrollHeight})
+  }, [messages.length, last?.text, waiting, open])
 
   function submit(e: FormEvent) {
     e.preventDefault()
     const text = draft.trim()
-    if (!text && !attachment) return
+    if (!text && !seeScreen) return
     setDraft('')
-    setAttachment(null)
-    onSend(text, attachment ?? undefined)
+    onSend(text)
   }
 
   return (
@@ -124,7 +107,7 @@ export function ChatPanel({open, speaking, messages, onSend, onClose}: Props) {
           <div className="font-mono text-[11px] font-medium tracking-[0.32em]">A.R.I.A</div>
           <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[9px] tracking-[0.22em] text-spark-cyan/80">
             {speaking ? <Waveform active /> : <span className="size-1.5 rounded-full bg-spark-cyan shadow-[0_0_8px_#22d3ee]" />}
-            {speaking ? 'PARLE' : 'EN LIGNE'}
+            {speaking ? 'PARLE' : waiting ? 'ANALYSE' : 'EN LIGNE'}
           </div>
         </div>
         <kbd className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400">⌥⇧A</kbd>
@@ -143,11 +126,20 @@ export function ChatPanel({open, speaking, messages, onSend, onClose}: Props) {
         {messages.map((m) =>
           m.from === 'aria' ? (
             <li key={m.id} className="relative pl-3.5">
-              <span className="absolute top-1 bottom-1 left-0 w-px bg-gradient-to-b from-spark-cyan to-spark-violet/30" />
-              <div className="mb-1 font-mono text-[9px] tracking-[0.22em] text-spark-cyan/70">
+              <span
+                className={`absolute top-1 bottom-1 left-0 w-px bg-gradient-to-b ${
+                  m.error ? 'from-rose-400 to-rose-400/20' : 'from-spark-cyan to-spark-violet/30'
+                }`}
+              />
+              <div className={`mb-1 font-mono text-[9px] tracking-[0.22em] ${m.error ? 'text-rose-300/80' : 'text-spark-cyan/70'}`}>
                 ARIA · {time(m.at)}
               </div>
-              <p className="text-[13.5px] leading-relaxed text-slate-200">{m.text}</p>
+              <p className={`text-[13.5px] leading-relaxed ${m.error ? 'text-rose-200/90' : 'text-slate-200'}`}>
+                {m.text}
+                {m.streaming && (
+                  <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-blink bg-spark-cyan" />
+                )}
+              </p>
             </li>
           ) : (
             <li key={m.id} className="flex flex-col items-end gap-1.5">
@@ -161,29 +153,35 @@ export function ChatPanel({open, speaking, messages, onSend, onClose}: Props) {
             </li>
           ),
         )}
+        {waiting && (
+          <li className="relative flex items-center gap-2 pl-3.5 font-mono text-[9.5px] tracking-[0.25em] text-spark-cyan/80">
+            <span className="absolute top-0 bottom-0 left-0 w-px bg-gradient-to-b from-spark-cyan to-spark-violet/30" />
+            <Waveform active />
+            {seeScreen ? 'ANALYSE DE L’ÉCRAN' : 'RÉFLEXION'}
+          </li>
+        )}
       </ol>
 
-      <form onSubmit={submit} className="space-y-2 px-3 pb-2">
-        {attachment && <Thumbnail capture={attachment} onRemove={() => setAttachment(null)} />}
-        {error && <p className="font-mono text-[10px] leading-snug text-rose-300/90">{error}</p>}
+      <form onSubmit={submit} className="px-3 pb-2">
         <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/30 pr-3 pl-1.5 transition-[border-color,box-shadow] focus-within:border-spark-cyan/50 focus-within:shadow-[0_0_0_3px_rgb(34_211_238/0.08)]">
           <button
             type="button"
-            onClick={capture}
-            disabled={capturing}
-            aria-label="Joindre une capture de l'écran"
-            title="Montrer mon écran à A.R.I.A"
-            className={`grid size-7 place-items-center rounded-md transition-colors hover:bg-white/5 ${
-              attachment ? 'text-spark-cyan' : 'text-slate-400 hover:text-spark-cyan'
-            } ${capturing ? 'animate-pulse' : ''}`}
+            onClick={onToggleScreen}
+            aria-pressed={seeScreen}
+            aria-label={seeScreen ? 'A.R.I.A voit ton écran' : 'Vision coupée'}
+            title={seeScreen ? 'Vision active : chaque question part avec une capture' : 'Vision coupée'}
+            className={`relative grid size-7 place-items-center rounded-md transition-colors hover:bg-white/5 ${
+              seeScreen ? 'text-spark-cyan' : 'text-slate-500'
+            }`}
           >
             <EyeIcon className="size-4" />
+            {!seeScreen && <span className="absolute h-px w-4 rotate-45 bg-current" />}
           </button>
           <input
             ref={input}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder={attachment ? 'Que veux-tu savoir sur ton écran ?' : 'Demande à A.R.I.A…'}
+            placeholder={seeScreen ? 'Que dois-je faire ici ?' : 'Demande à A.R.I.A…'}
             className="h-10 flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-slate-500"
           />
           <kbd className="font-mono text-[10px] text-slate-500">↵</kbd>
@@ -191,8 +189,8 @@ export function ChatPanel({open, speaking, messages, onSend, onClose}: Props) {
       </form>
 
       <footer className="flex items-center gap-4 px-4 pb-3 font-mono text-[8.5px] tracking-[0.22em]">
-        <Module name="VISION" on={visionOk} />
-        <Module name="IA" on={false} />
+        <Module name="VISION" on={seeScreen} />
+        <Module name="IA" on={aiReady} />
         <Module name="VOIX" on />
         <span className="ml-auto text-slate-600">ÉCHAP</span>
       </footer>

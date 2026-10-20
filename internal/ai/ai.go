@@ -1,18 +1,30 @@
 // Package ai talks to a multimodal LLM on behalf of A.R.I.A.
 //
-// Planned design (phase 3): provider-agnostic interface, streamed responses
-// (tokens are pushed to the UI and to the TTS as they arrive, so A.R.I.A
-// starts speaking before the full answer is generated).
+// Responses are streamed: text chunks are pushed to the UI and to the TTS as
+// they arrive, so A.R.I.A starts speaking before the answer is complete.
 package ai
 
 import "context"
 
-// Persona is the system prompt shared by every provider.
-const Persona = `Tu es A.R.I.A (Augmented Reality & Intelligence Agent), la coéquipière de l'utilisateur.
-Tu vois son écran. Réponds de façon concise, pertinente et directe : une à trois phrases, sauf demande explicite.`
+// Persona is the system prompt shared by every provider. Answers are read
+// aloud, hence the "no formatting" rules.
+const Persona = `Tu es A.R.I.A (Augmented Reality & Intelligence Agent), la coéquipière de l'utilisateur, façon Jarvis.
+Tu vois son écran grâce à la capture jointe à sa question (jeu vidéo, navigation, travail...).
+Règles :
+- Réponds en français, de façon concise et directe : une à trois phrases, sauf demande explicite.
+- Va droit au conseil actionnable ; appuie-toi sur ce que tu vois à l'écran.
+- Tes réponses sont lues à voix haute : pas de markdown, pas de listes, pas d'emoji.
+- Si l'image ne permet pas de répondre, dis-le en une phrase.`
+
+type Role string
+
+const (
+	RoleUser  Role = "user"
+	RoleModel Role = "model"
+)
 
 type Message struct {
-	Role  string // "user" | "assistant"
+	Role  Role
 	Text  string
 	Image []byte // optional JPEG screenshot
 }
@@ -24,7 +36,10 @@ type Chunk struct {
 	Err  error
 }
 
-// Provider is a multimodal LLM backend.
+// Provider is a multimodal LLM backend. Stream must have finished reading
+// the history (images included) when it returns: callers may reuse the
+// image buffers right after.
 type Provider interface {
-	Stream(ctx context.Context, history []Message) (<-chan Chunk, error)
+	Name() string
+	Stream(ctx context.Context, system string, history []Message) (<-chan Chunk, error)
 }

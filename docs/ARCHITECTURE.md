@@ -16,7 +16,7 @@ l'utilisateur via A.R.I.A. Cibles : **macOS** et **Windows**.
 │ internal/app      Pont Wails : cycle de vie, méthodes exposées au front            │
 │ internal/overlay  Fenêtre transparente + click-through natif   ✅ POC              │
 │ internal/vision   Capture d'écran (pool de buffers, JPEG, base64)   ✅             │
-│ internal/ai       Fournisseur LLM multimodal, réponses streamées    phase 3        │
+│ internal/ai       Fournisseur LLM multimodal, réponses streamées    ✅ Gemini      │
 │ internal/audio    STT (commandes vocales) / TTS (voix d'A.R.I.A)    phase 4        │
 │ internal/config   Réglages, secrets via variables d'environnement                  │
 └────────────────────────────────────────────────────────────────────────────────────┘
@@ -98,6 +98,40 @@ LLM qui limite le débit, pas la capture.
   IA de la phase 3 ; le frontend n'en reçoit qu'une data URL pour la miniature.
 - Test réel optionnel : `SPARK_VISION_E2E=1 go test -run E2E -v ./internal/vision`.
 
+## IA
+
+```
+question ─► capture (≈110-200 ms) ─► Gemini streamGenerateContent (SSE)
+                                         │ tokens
+                         ┌───────────────┴───────────────┐
+                    EventDelta (UI)            découpe en phrases ─► TTS
+```
+
+- **Fournisseur** : interface `ai.Provider` ; implémentation Gemini en REST pur
+  (pas de SDK), clé dans l'en-tête `x-goog-api-key`, `thinking_level: low` pour
+  la latence (retiré automatiquement si le modèle le refuse).
+- **Vision dynamique** : chaque question part avec une capture prise à
+  l'instant, sans action de l'utilisateur ; l'œil du chat coupe la vision.
+- **Historique** : 12 tours max, en texte seul. Seule la question courante
+  porte une image : le coût en tokens reste borné.
+- **Voix au fil de l'eau** : la réponse est découpée en phrases (`ai.Sentences`,
+  qui ne coupe pas « 3.5 » ni « A.R.I.A ») ; A.R.I.A lit la première pendant
+  que la suite arrive.
+- **Interruption** : une nouvelle question annule la précédente (requête HTTP,
+  voix) et attend sa fin pour garder l'alternance user/model.
+- **Test sans clé** : `SPARK_LLM_BASE_URL` pointe le client vers un faux
+  serveur local ; `go test ./internal/ai` couvre SSE, erreurs et repli.
+
+### Prochaine étape : la voix (phase 4)
+
+Push-to-talk : une touche maintenue enregistre le micro, la capture est prise
+à l'appui (la situation au moment où tu parles). Au relâchement, l'audio et
+l'image partent **dans la même requête** : Gemini comprend directement la
+parole, sans module de transcription séparé, ce qui économise un aller-retour.
+Le mode « toujours à l'écoute » (Gemini Live API, voix native) viendra après :
+il envoie le micro en continu, ce qui pose plus de questions de vie privée et
+de quota.
+
 ## Pistes de performance déjà prévues
 - **IA** : streaming des tokens vers l'interface **et** vers la synthèse vocale,
   phrase par phrase : A.R.I.A commence à parler avant la fin de la génération.
@@ -115,8 +149,9 @@ LLM qui limite le débit, pas la capture.
 | 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
 | 1.3 | Icône dans la barre de menus / zone de notification, réglages | |
 | 2 | Vision : capture à la demande (ScreenCaptureKit / GDI), pool, JPEG | ✅ |
-| 3 | IA : fournisseur multimodal, streaming, persona A.R.I.A | |
-| 4 | Audio : STT push-to-talk, TTS voix féminine | |
+| 3 | IA : Gemini, capture à chaque question, streaming texte + voix | ✅ |
+| 4 | Voix : push-to-talk, audio envoyé directement à Gemini | |
+| 4.1 | Voix neuronale d'A.R.I.A (Gemini TTS ou Live API) | |
 | 5 | Mode proactif, réglages, packaging (signature, installeur NSIS) | |
 
 ## Points d'attention connus

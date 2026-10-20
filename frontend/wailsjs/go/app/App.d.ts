@@ -4,9 +4,9 @@ import {app} from '../models';
 import {config} from '../models';
 import {overlay} from '../models';
 
-export function Boot():Promise<void>;
+export function Ask(arg1:string,arg2:boolean):Promise<app.Turn>;
 
-export function CaptureScreen():Promise<app.Capture>;
+export function Boot():Promise<void>;
 
 export function Debug():Promise<boolean>;
 
@@ -19,3 +19,5 @@ export function SetInteractiveRegions(arg1:Array<overlay.Rect>):Promise<void>;
 export function SetMouseCaptured(arg1:boolean):Promise<void>;
 
 export function SetOrbPosition(arg1:number,arg2:number):Promise<void>;
+
+export function Status():Promise<app.Status>;
