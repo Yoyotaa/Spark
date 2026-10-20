@@ -16,9 +16,9 @@ l'utilisateur via A.R.I.A. Cibles : **macOS** et **Windows**.
 │ internal/app      Pont Wails : cycle de vie, méthodes exposées au front            │
 │ internal/overlay  Fenêtre transparente + click-through natif   ✅ POC              │
 │ internal/vision   Capture d'écran (pool de buffers, JPEG, base64)   ✅             │
-│ internal/ai       Fournisseur LLM multimodal, réponses streamées    ✅ Gemini      │
+│ internal/ai       LLM multimodal streamé : Gemini, Claude, OpenAI-compatible  ✅      │
 │ internal/audio    STT (commandes vocales) / TTS (voix d'A.R.I.A)    phase 4        │
-│ internal/config   Réglages, secrets via variables d'environnement                  │
+│ internal/config   Paramètres persistants, clés API (trousseau), overrides d'env     │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,6 +98,28 @@ LLM qui limite le débit, pas la capture.
   IA de la phase 3 ; le frontend n'en reçoit qu'une data URL pour la miniature.
 - Test réel optionnel : `SPARK_VISION_E2E=1 go test -run E2E -v ./internal/vision`.
 
+## Paramètres
+
+- **Modèle** : `config.Settings` (Go) est la source de vérité, reflétée en
+  TypeScript (`frontend/src/lib/settings.ts`). Le fichier JSON est relu par-dessus
+  `Defaults()` : un champ absent (ancienne version) garde sa valeur par défaut,
+  puis `Normalize()` borne chaque valeur. Un fichier corrompu ne bloque jamais
+  le démarrage.
+- **Écriture atomique** (fichier temporaire + renommage) ; `Get()` renvoie une
+  copie, les maps internes ne fuient jamais.
+- **Application à chaud** : `App.apply` ne reconstruit que ce qui change
+  (fournisseur IA, voix, raccourcis, vision, fréquence de survol, debug).
+  Les raccourcis sont désinscrits de façon synchrone avant d'être réinscrits,
+  ce qui permet de réutiliser la même combinaison.
+- **UI** : édition optimiste et enregistrement automatique (anti-rebond de
+  250 ms) ; Go renvoie les valeurs normalisées, qui font foi.
+- **Clés API** : trousseau du système via `zalando/go-keyring` (sur macOS, le
+  secret passe par l'entrée standard de `security -i`, jamais par la ligne de
+  commande). L'interface n'en voit que la source et les 4 derniers caractères.
+- **Raccourcis et dispositions** : les lettres suivent la disposition active ;
+  sur macOS ⌥+lettre produit un caractère spécial dans le webview, la lettre
+  est alors retrouvée côté Go depuis la touche physique (`KeyLabel`).
+
 ## IA
 
 ```
@@ -107,8 +129,13 @@ question ─► capture (≈110-200 ms) ─► Gemini streamGenerateContent (SSE
                     EventDelta (UI)            découpe en phrases ─► TTS
 ```
 
-- **Fournisseur** : interface `ai.Provider` ; implémentation Gemini en REST pur
-  (pas de SDK), clé dans l'en-tête `x-goog-api-key`.
+- **Fournisseurs** : interface `ai.Provider` (`Stream`, `ListModels`).
+  Gemini en REST pur (clé dans l'en-tête `x-goog-api-key`) ; Claude via le SDK
+  Go officiel (effort `low` par défaut, repli serveur `fallbacks: "default"`
+  quand le modèle le permet, 1 nouvelle tentative max) ; OpenAI et compatibles
+  via Chat Completions (`reasoning_effort` retiré si le modèle le refuse).
+- **Consigne système** générée selon la langue, la longueur et les
+  instructions personnalisées (`ai.SystemPrompt`).
 - **Modèle et latence** : `gemini-3.6-flash` par défaut, avec
   `thinking_config.thinking_level = low`. Mesures sur le niveau gratuit
   (oct. 2026), question + capture, premier mot :
@@ -163,7 +190,8 @@ de quota.
 | 1 | Fenêtre transparente + click-through natif mac/Windows | ✅ |
 | 1.1 | Raccourcis globaux, focus clavier rendu à l'app précédente | ✅ |
 | 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
-| 1.3 | Icône dans la barre de menus / zone de notification, réglages | |
+| 1.3 | Page de paramètres complète, multi-fournisseurs, clés dans le trousseau | ✅ |
+| 1.4 | Icône dans la barre de menus / zone de notification, lancement au démarrage | |
 | 2 | Vision : capture à la demande (ScreenCaptureKit / GDI), pool, JPEG | ✅ |
 | 3 | IA : Gemini, capture à chaque question, streaming texte + voix | ✅ |
 | 4 | Voix : push-to-talk, audio envoyé directement à Gemini | |

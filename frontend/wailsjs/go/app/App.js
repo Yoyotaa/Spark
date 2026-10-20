@@ -10,20 +10,56 @@ export function Boot() {
   return window['go']['app']['App']['Boot']();
 }
 
+export function ClearConversation() {
+  return window['go']['app']['App']['ClearConversation']();
+}
+
 export function Debug() {
   return window['go']['app']['App']['Debug']();
+}
+
+export function GetAIStatus() {
+  return window['go']['app']['App']['GetAIStatus']();
+}
+
+export function GetAppInfo() {
+  return window['go']['app']['App']['GetAppInfo']();
 }
 
 export function GetSettings() {
   return window['go']['app']['App']['GetSettings']();
 }
 
-export function SetChatOpen(arg1) {
-  return window['go']['app']['App']['SetChatOpen'](arg1);
+export function KeyLabel(arg1) {
+  return window['go']['app']['App']['KeyLabel'](arg1);
+}
+
+export function ListModels(arg1) {
+  return window['go']['app']['App']['ListModels'](arg1);
+}
+
+export function ListVoices() {
+  return window['go']['app']['App']['ListVoices']();
+}
+
+export function ResetSettings() {
+  return window['go']['app']['App']['ResetSettings']();
+}
+
+export function SaveSettings(arg1) {
+  return window['go']['app']['App']['SaveSettings'](arg1);
+}
+
+export function SetAPIKey(arg1, arg2) {
+  return window['go']['app']['App']['SetAPIKey'](arg1, arg2);
 }
 
 export function SetInteractiveRegions(arg1) {
   return window['go']['app']['App']['SetInteractiveRegions'](arg1);
+}
+
+export function SetKeyboardFocus(arg1) {
+  return window['go']['app']['App']['SetKeyboardFocus'](arg1);
 }
 
 export function SetMouseCaptured(arg1) {
@@ -34,6 +70,10 @@ export function SetOrbPosition(arg1, arg2) {
   return window['go']['app']['App']['SetOrbPosition'](arg1, arg2);
 }
 
-export function Status() {
-  return window['go']['app']['App']['Status']();
+export function TestAI(arg1) {
+  return window['go']['app']['App']['TestAI'](arg1);
+}
+
+export function TestVoice() {
+  return window['go']['app']['App']['TestVoice']();
 }

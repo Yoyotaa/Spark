@@ -37,7 +37,7 @@ static NSData *encodeJPEG(CGImageRef image, double quality) {
 // Captures the main display without Spark's own windows, downscaled by
 // ScreenCaptureKit (GPU) so that the longest side is at most maxSide.
 // Blocks the calling (non-main) thread until done or timed out.
-int sparkCaptureScreen(int maxSide, double quality, double timeoutSec, sparkFrame *out) {
+int sparkCaptureScreen(int maxSide, double quality, int showCursor, double timeoutSec, sparkFrame *out) {
 	if (@available(macOS 14.0, *)) {
 		// __block storage outlives this function if we time out: the
 		// completion handlers keep it alive, so late writes are harmless.
@@ -82,7 +82,7 @@ int sparkCaptureScreen(int maxSide, double quality, double timeoutSec, sparkFram
 			SCStreamConfiguration *cfg = [[SCStreamConfiguration alloc] init];
 			cfg.width = (size_t)llround(w * k);
 			cfg.height = (size_t)llround(h * k);
-			cfg.showsCursor = YES;
+			cfg.showsCursor = showCursor ? YES : NO;
 
 			[SCScreenshotManager captureImageWithFilter:filter
 			                              configuration:cfg

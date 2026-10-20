@@ -23,7 +23,9 @@ type Props = {
   messages: Message[]
   onSend: (text: string) => void
   onToggleScreen: () => void
+  onOpenSettings: () => void
   onClose: () => void
+  toggleLabel: string
 }
 
 const time = (d: Date) => d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})
@@ -31,7 +33,7 @@ const time = (d: Date) => d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute
 function Module({name, on}: {name: string; on: boolean}) {
   return (
     <span className={`flex items-center gap-1.5 ${on ? 'text-spark-cyan/80' : 'text-slate-600'}`}>
-      <span className={`size-1 rounded-full ${on ? 'bg-spark-cyan shadow-[0_0_6px_#22d3ee]' : 'bg-slate-600'}`} />
+      <span className={`size-1 rounded-full ${on ? 'bg-spark-cyan shadow-[0_0_6px_var(--color-spark-cyan)]' : 'bg-slate-600'}`} />
       {name}
     </span>
   )
@@ -68,7 +70,9 @@ export function ChatPanel({
   messages,
   onSend,
   onToggleScreen,
+  onOpenSettings,
   onClose,
+  toggleLabel,
 }: Props) {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLOListElement>(null)
@@ -97,7 +101,7 @@ export function ChatPanel({
       data-interactive
       hidden={!open}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
-      className="relative flex h-[30rem] w-[22rem] animate-panel-in flex-col rounded-[14px] border border-white/[0.07] bg-panel text-slate-100 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.75),0_0_0_1px_rgb(34_211_238/0.05)] backdrop-blur-2xl"
+      className="relative flex h-[30rem] w-[22rem] animate-panel-in flex-col rounded-[14px] border border-white/[0.07] bg-panel text-slate-100 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.75),0_0_0_1px_color-mix(in_oklab,var(--color-spark-cyan)_5%,transparent)] backdrop-blur-2xl"
     >
       <HudCorners />
 
@@ -106,11 +110,22 @@ export function ChatPanel({
         <div className="flex-1 leading-none">
           <div className="font-mono text-[11px] font-medium tracking-[0.32em]">A.R.I.A</div>
           <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[9px] tracking-[0.22em] text-spark-cyan/80">
-            {speaking ? <Waveform active /> : <span className="size-1.5 rounded-full bg-spark-cyan shadow-[0_0_8px_#22d3ee]" />}
+            {speaking ? <Waveform active /> : <span className="size-1.5 rounded-full bg-spark-cyan shadow-[0_0_8px_var(--color-spark-cyan)]" />}
             {speaking ? 'PARLE' : waiting ? 'ANALYSE' : 'EN LIGNE'}
           </div>
         </div>
-        <kbd className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400">⌥⇧A</kbd>
+        <kbd className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400">{toggleLabel}</kbd>
+        <button
+          onClick={onOpenSettings}
+          aria-label="Paramètres"
+          title="Paramètres"
+          className="grid size-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-100"
+        >
+          <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+            <circle cx="10" cy="10" r="2.5" />
+            <path d="M10 2v2.2M10 15.8V18M2 10h2.2M15.8 10H18M4.3 4.3l1.6 1.6M14.1 14.1l1.6 1.6M4.3 15.7l1.6-1.6M14.1 5.9l1.6-1.6" />
+          </svg>
+        </button>
         <button
           onClick={onClose}
           aria-label="Fermer"
@@ -163,7 +178,7 @@ export function ChatPanel({
       </ol>
 
       <form onSubmit={submit} className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/30 pr-3 pl-1.5 transition-[border-color,box-shadow] focus-within:border-spark-cyan/50 focus-within:shadow-[0_0_0_3px_rgb(34_211_238/0.08)]">
+        <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-black/30 pr-3 pl-1.5 transition-[border-color,box-shadow] focus-within:border-spark-cyan/50 focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-spark-cyan)_8%,transparent)]">
           <button
             type="button"
             onClick={onToggleScreen}

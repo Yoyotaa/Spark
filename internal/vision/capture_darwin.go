@@ -34,7 +34,11 @@ func (darwinPlatform) captureJPEG(ctx context.Context, opts Options, dst []byte)
 		timeout = min(timeout, time.Until(d))
 	}
 	var f C.sparkFrame
-	rc := C.sparkCaptureScreen(C.int(opts.MaxSide), C.double(float64(opts.Quality)/100), C.double(timeout.Seconds()), &f)
+	cursor := C.int(0)
+	if opts.ShowCursor {
+		cursor = 1
+	}
+	rc := C.sparkCaptureScreen(C.int(opts.MaxSide), C.double(float64(opts.Quality)/100), cursor, C.double(timeout.Seconds()), &f)
 	if rc != 0 {
 		if f.denied == 1 || !hasPermission() {
 			return dst, 0, 0, ErrPermission

@@ -21,9 +21,9 @@ var assets embed.FS
 func main() {
 	settings, err := config.OpenStore()
 	if err != nil {
-		log.Printf("settings not persisted: %v", err)
+		log.Printf("settings: %v (defaults used)", err)
 	}
-	a := app.New(config.Load(), settings)
+	a := app.New(config.LoadEnv(), settings)
 
 	err = wails.Run(&options.App{
 		Title: "Spark",

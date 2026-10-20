@@ -27,9 +27,11 @@ type Options struct {
 	MaxSide int
 	// Quality is the JPEG quality, 1-100.
 	Quality int
+	// ShowCursor draws the mouse pointer in the capture (macOS).
+	ShowCursor bool
 }
 
-var DefaultOptions = Options{MaxSide: 1568, Quality: 72}
+var DefaultOptions = Options{MaxSide: 1568, Quality: 72, ShowCursor: true}
 
 // ErrPermission means the OS denied screen capture (macOS Screen Recording).
 var ErrPermission = errors.New("vision: screen recording permission denied")
@@ -89,6 +91,13 @@ type Service struct {
 
 func New(opts Options) *Service {
 	return &Service{opts: opts, native: newPlatform()}
+}
+
+// SetOptions changes the options for the next captures.
+func (s *Service) SetOptions(opts Options) {
+	s.mu.Lock()
+	s.opts = opts
+	s.mu.Unlock()
 }
 
 func (s *Service) Capture(ctx context.Context) (*Frame, error) {

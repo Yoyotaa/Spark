@@ -6,7 +6,6 @@
 package hotkey
 
 import (
-	"context"
 	"strings"
 )
 
@@ -19,10 +18,11 @@ const (
 	ModCmd                        // ⌘ on macOS, Windows key on Windows
 )
 
-// Key is an uppercase letter 'A'..'Z' or KeySpace.
-type Key rune
+// Key is "A"-"Z", "0"-"9", "F1"-"F12" or "Space". Letters follow the active
+// keyboard layout; digits and function keys are physical keys.
+type Key string
 
-const KeySpace Key = ' '
+const KeySpace Key = "Space"
 
 // Binding associates a shortcut with a callback. Callbacks run on their own
 // goroutine, never on a UI thread, so they may freely call back into the
@@ -43,16 +43,51 @@ func (b Binding) String() string {
 			s.WriteString(m.name)
 		}
 	}
-	if b.Key == KeySpace {
-		s.WriteString("Space")
-	} else {
-		s.WriteRune(rune(b.Key))
-	}
+	s.WriteString(string(b.Key))
 	return s.String()
 }
 
-// Listen registers the bindings and keeps them active until ctx is
-// cancelled. It fails if any shortcut is already taken by another app.
-func Listen(ctx context.Context, bindings []Binding) error {
-	return listen(ctx, bindings)
+// functionKey returns n for "F<n>" (1-12), 0 otherwise.
+func functionKey(k Key) int {
+	if len(k) < 2 || k[0] != 'F' {
+		return 0
+	}
+	n := 0
+	for _, c := range k[1:] {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 || n > 12 {
+		return 0
+	}
+	return n
 }
+
+// Listener holds registered shortcuts until Close.
+type Listener struct {
+	close func()
+}
+
+// Close unregisters the shortcuts and waits until it is done, so the same
+// combinations can be registered again right after. Must not be called from
+// the UI main thread.
+func (l *Listener) Close() {
+	if l != nil && l.close != nil {
+		l.close()
+		l.close = nil
+	}
+}
+
+// Register activates the bindings. It fails, registering nothing, if a
+// shortcut is invalid or already taken by another application.
+func Register(bindings []Binding) (*Listener, error) {
+	return register(bindings)
+}
+
+// LetterForCode returns the letter that the physical key identified by a DOM
+// KeyboardEvent.code ("KeyQ"...) types with the current layout: on AZERTY,
+// "KeyQ" is "A". Needed because Option+letter produces special characters
+// on macOS, hiding the letter from the webview.
+func LetterForCode(code string) (Key, bool) { return letterForCode(code) }

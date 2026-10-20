@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -20,10 +21,6 @@ const (
 	// token: 3.6 Flash ≈ 1.8 s with thinking "low" (5-10 s by default),
 	// 3.5 Flash-Lite ≈ 0.9 s, 3.8 Flash queued for ~40 s.
 	DefaultGeminiModel = "gemini-3.6-flash"
-
-	// On screenshots the model thinks 5-10x more than on text: "low" cuts
-	// the first-token latency by 3-5x. Dropped if a model rejects it.
-	defaultThinkingLevel = "low"
 
 	// The free tier answers 503 "high demand" in bursts: one quick retry.
 	retryDelay = 800 * time.Millisecond
@@ -46,7 +43,10 @@ type Gemini struct {
 }
 
 // NewGemini creates a client; empty model and baseURL select the defaults.
-func NewGemini(apiKey, model, baseURL string) *Gemini {
+// thinking is the thinking level ("low" recommended: on screenshots the
+// model thinks 5-10x more than on text, "low" cuts the first-token latency
+// by 3-5x); it is dropped if the model rejects it.
+func NewGemini(apiKey, model, baseURL, thinking string) *Gemini {
 	if model == "" {
 		model = DefaultGeminiModel
 	}
@@ -57,7 +57,7 @@ func NewGemini(apiKey, model, baseURL string) *Gemini {
 		apiKey:        apiKey,
 		model:         model,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
-		thinkingLevel: defaultThinkingLevel,
+		thinkingLevel: thinking,
 		// No global timeout: a stream may legitimately last a while; the
 		// caller's context bounds it.
 		client: &http.Client{Transport: &http.Transport{
@@ -278,3 +278,36 @@ func (g *Gemini) read(ctx context.Context, body io.ReadCloser, ch chan<- Chunk) 
 }
 
 var _ Provider = (*Gemini)(nil)
+
+// ListModels returns the models that can generate content.
+func (g *Gemini) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.baseURL+"/models?pageSize=1000", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-goog-api-key", g.apiKey)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Gemini injoignable : %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, friendlyError(resp.StatusCode, decodeError(resp))
+	}
+	defer resp.Body.Close()
+	var list struct {
+		Models []struct {
+			Name    string   `json:"name"`
+			Methods []string `json:"supportedGenerationMethods"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, m := range list.Models {
+		if slices.Contains(m.Methods, "generateContent") {
+			ids = append(ids, strings.TrimPrefix(m.Name, "models/"))
+		}
+	}
+	return ids, nil
+}

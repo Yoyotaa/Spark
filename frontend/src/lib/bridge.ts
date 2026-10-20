@@ -3,12 +3,14 @@
 import * as App from '../../wailsjs/go/app/App'
 import type {app, config, overlay} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
+import {DEFAULTS, type Provider, type Settings} from './settings'
 
 const inWails = typeof window !== 'undefined' && 'go' in window
 
 // Mirrors the constants of internal/app/app.go.
 const EventToggleChat = 'aria:toggle-chat'
 const EventVisibility = 'spark:visibility'
+const EventOpenSettings = 'spark:open-settings'
 const EventSay = 'aria:say'
 const EventSpeaking = 'aria:speaking'
 const EventDelta = 'aria:delta'
@@ -39,8 +41,9 @@ export function setMouseCaptured(v: boolean): void {
   if (inWails) void App.SetMouseCaptured(v)
 }
 
-export function setChatOpen(open: boolean): void {
-  if (inWails) void App.SetChatOpen(open)
+/** Takes the keyboard (chat or settings in use) or hands it back. */
+export function setKeyboardFocus(focused: boolean): void {
+  if (inWails) void App.SetKeyboardFocus(focused)
 }
 
 /** Starts the welcome sequence (voice + bubble). */
@@ -61,8 +64,90 @@ export function boot(): void {
   }, 600)
 }
 
-export async function getSettings(): Promise<Partial<config.Settings>> {
-  return inWails ? App.GetSettings() : {}
+// ---- Settings -------------------------------------------------------------
+
+let previewSettings: Settings = structuredClone(DEFAULTS)
+
+export async function getSettings(): Promise<Settings> {
+  return inWails ? ((await App.GetSettings()) as unknown as Settings) : structuredClone(previewSettings)
+}
+
+export type SaveResult = {settings: Settings; hotkeyError?: string}
+
+/** Persists and applies; resolves with the normalized settings. */
+export async function saveSettings(s: Settings): Promise<SaveResult> {
+  if (inWails) return (await App.SaveSettings(s as unknown as config.Settings)) as unknown as SaveResult
+  previewSettings = structuredClone(s)
+  return {settings: structuredClone(s)}
+}
+
+export async function resetSettings(): Promise<SaveResult> {
+  if (inWails) return (await App.ResetSettings()) as unknown as SaveResult
+  previewSettings = {...structuredClone(DEFAULTS), orb: previewSettings.orb}
+  return {settings: structuredClone(previewSettings)}
+}
+
+export type KeyInfo = {source: '' | 'keychain' | 'env'; hint: string; envNames: string[]}
+export type AIStatus = {ready: boolean; name: string; error?: string; keys: Record<string, KeyInfo>}
+
+const previewKeys: Record<string, KeyInfo> = Object.fromEntries(
+  (['gemini', 'claude', 'openai'] as Provider[]).map((p) => [p, {source: '', hint: '', envNames: []}]),
+)
+
+export async function getAIStatus(): Promise<AIStatus> {
+  if (inWails) return (await App.GetAIStatus()) as AIStatus
+  return {ready: false, name: 'aperçu navigateur', error: 'Aperçu : pas de connexion IA', keys: previewKeys}
+}
+
+/** Stores the key in the OS keychain ("" deletes it). */
+export async function setAPIKey(provider: Provider, key: string): Promise<AIStatus> {
+  if (inWails) return (await App.SetAPIKey(provider, key)) as AIStatus
+  previewKeys[provider] = key ? {source: 'keychain', hint: key.slice(-4), envNames: []} : {source: '', hint: '', envNames: []}
+  return getAIStatus()
+}
+
+export async function listModels(provider: Provider): Promise<string[]> {
+  if (inWails) return App.ListModels(provider)
+  throw new Error('Indisponible dans l’aperçu navigateur')
+}
+
+export type TestResult = {millis: number; reply: string; model: string}
+
+export async function testAI(provider: Provider): Promise<TestResult> {
+  if (inWails) return App.TestAI(provider)
+  throw new Error('Indisponible dans l’aperçu navigateur')
+}
+
+export type Voice = {name: string; lang: string}
+
+export async function listVoices(): Promise<Voice[]> {
+  if (inWails) return App.ListVoices()
+  return [
+    {name: 'Amélie', lang: 'fr_CA'},
+    {name: 'Audrey (Premium)', lang: 'fr_FR'},
+    {name: 'Samantha', lang: 'en_US'},
+  ]
+}
+
+export function testVoice(): void {
+  if (inWails) void App.TestVoice()
+}
+
+export function clearConversation(): void {
+  if (inWails) void App.ClearConversation()
+}
+
+/** Letter typed by a physical key (KeyboardEvent.code) on the current layout. */
+export async function keyLabel(code: string): Promise<string> {
+  if (inWails) return App.KeyLabel(code)
+  return /^Key[A-Z]$/.test(code) ? code.slice(3) : ''
+}
+
+export type AppInfo = {version: string; platform: string; settingsPath: string}
+
+export async function getAppInfo(): Promise<AppInfo> {
+  if (inWails) return App.GetAppInfo()
+  return {version: 'dev', platform: 'navigateur', settingsPath: '(aperçu : en mémoire)'}
 }
 
 export function saveOrbPosition(p: Point): void {
@@ -73,7 +158,6 @@ export type Capture = Pick<app.Capture, 'width' | 'height' | 'bytes' | 'millis' 
 export type Turn = {id: number; capture?: Capture}
 export type Delta = {id: number; text: string}
 export type Done = {id: number; error?: string; interrupted?: boolean}
-export type Status = {ai: string; aiReady: boolean}
 
 let fakeTurn = 0
 
@@ -91,9 +175,6 @@ export async function ask(text: string, withScreen: boolean): Promise<Turn> {
   return {id}
 }
 
-export async function status(): Promise<Status> {
-  return inWails ? App.Status() : {ai: 'aperçu', aiReady: false}
-}
 
 export async function isDebug(): Promise<boolean> {
   return inWails ? App.Debug() : new URLSearchParams(location.search).has('debug')
@@ -101,6 +182,8 @@ export async function isDebug(): Promise<boolean> {
 
 /** Global hotkey ⌥⇧A. */
 export const onToggleChat = (cb: () => void) => on(EventToggleChat, cb)
+/** Global hotkey: open the settings. */
+export const onOpenSettings = (cb: () => void) => on(EventOpenSettings, cb)
 /** Global hotkey ⌥⇧H. */
 export const onVisibility = (cb: (visible: boolean) => void) => on(EventVisibility, cb)
 /** A.R.I.A says something (greeting, answers). */

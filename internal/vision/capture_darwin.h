@@ -9,6 +9,6 @@ typedef struct {
 	char err[256];
 } sparkFrame;
 
-int sparkCaptureScreen(int maxSide, double quality, double timeoutSec, sparkFrame *out);
+int sparkCaptureScreen(int maxSide, double quality, int showCursor, double timeoutSec, sparkFrame *out);
 int sparkHasScreenAccess(void);
 void sparkRequestScreenAccess(void);

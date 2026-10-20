@@ -4,7 +4,7 @@
 #include "hotkey_darwin.h"
 #include "_cgo_export.h"
 
-#define SPARK_MAX_HOTKEYS 32
+#define SPARK_MAX_HOTKEYS 256
 
 static EventHotKeyRef refs[SPARK_MAX_HOTKEYS];
 static BOOL handlerInstalled = NO;
@@ -57,6 +57,34 @@ int sparkKeyCodeForChar(uint16_t ch) {
 	return result;
 }
 
+// Inverse of sparkKeyCodeForChar: the character a physical key types with
+// the current layout and no modifier, or -1.
+int sparkCharForKeyCode(uint16_t code) {
+	__block int result = -1;
+	onMain(^{
+		TISInputSourceRef src = TISCopyCurrentKeyboardLayoutInputSource();
+		CFDataRef data = src ? TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) : NULL;
+		if (data == NULL) {
+			if (src) CFRelease(src);
+			src = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
+			data = src ? TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData) : NULL;
+		}
+		if (data != NULL) {
+			const UCKeyboardLayout *layout = (const UCKeyboardLayout *)CFDataGetBytePtr(data);
+			UInt32 dead = 0;
+			UniChar chars[4];
+			UniCharCount len = 0;
+			OSStatus st = UCKeyTranslate(layout, code, kUCKeyActionDown, 0, LMGetKbdType(),
+			                             kUCKeyTranslateNoDeadKeysBit, &dead, 4, &len, chars);
+			if (st == noErr && len == 1) {
+				result = chars[0];
+			}
+		}
+		if (src) CFRelease(src);
+	});
+	return result;
+}
+
 int sparkRegisterHotkey(uint32_t id, uint32_t keyCode, uint32_t modifiers) {
 	if (id >= SPARK_MAX_HOTKEYS) {
 		return -1;
@@ -75,14 +103,14 @@ int sparkRegisterHotkey(uint32_t id, uint32_t keyCode, uint32_t modifiers) {
 	return (int)status;
 }
 
-void sparkUnregisterHotkeys(void) {
-	// Async: called during shutdown, the main thread must never be waited on.
-	dispatch_async(dispatch_get_main_queue(), ^{
-		for (int i = 0; i < SPARK_MAX_HOTKEYS; i++) {
-			if (refs[i] != NULL) {
-				UnregisterEventHotKey(refs[i]);
-				refs[i] = NULL;
-			}
+void sparkUnregisterHotkey(uint32_t id) {
+	if (id >= SPARK_MAX_HOTKEYS) {
+		return;
+	}
+	onMain(^{
+		if (refs[id] != NULL) {
+			UnregisterEventHotKey(refs[id]);
+			refs[id] = NULL;
 		}
 	});
 }

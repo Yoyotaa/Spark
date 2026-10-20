@@ -13,14 +13,13 @@ import (
 	"spark/internal/vision"
 )
 
-const (
-	captureTimeout = 5 * time.Second
-	// Text-only turns kept as context; screenshots are never kept in the
-	// history (only the current question carries one) to bound tokens.
-	maxHistory = 12
-	// Used when the user sends the screen without a question.
-	defaultQuestion = "Que vois-tu, et que me conseilles-tu ?"
-)
+const captureTimeout = 5 * time.Second
+
+// Used when the user sends the screen without a question.
+var defaultQuestion = map[string]string{
+	"fr": "Que vois-tu, et que me conseilles-tu ?",
+	"en": "What do you see, and what do you advise?",
+}
 
 // Capture describes the screenshot attached to a question.
 type Capture struct {
@@ -50,19 +49,6 @@ type Done struct {
 	Interrupted bool   `json:"interrupted,omitempty"`
 }
 
-// Status tells the UI which modules are available.
-type Status struct {
-	AI      string `json:"ai"`
-	AIReady bool   `json:"aiReady"`
-}
-
-func (a *App) Status() Status {
-	if a.llm == nil {
-		return Status{AI: "non configurée"}
-	}
-	return Status{AI: a.llm.Name(), AIReady: true}
-}
-
 // Ask sends a question to A.R.I.A, with a screenshot taken right now when
 // withScreen is set. A new question interrupts the previous answer (text and
 // voice). It returns once the request is accepted; the answer streams through
@@ -73,15 +59,21 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 			a.debugf("ai: question refusée : %v", err)
 		}
 	}()
-	if a.llm == nil {
-		return Turn{}, errors.New("IA non configurée : lance Spark avec SPARK_LLM_API_KEY (clé gratuite sur aistudio.google.com)")
+	a.mu.RLock()
+	llm, llmErr, cfg := a.llm, a.llmErr, a.cfg
+	a.mu.RUnlock()
+	if llm == nil {
+		if llmErr == nil {
+			llmErr = errors.New("IA non configurée")
+		}
+		return Turn{}, llmErr
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		if !withScreen {
 			return Turn{}, errors.New("question vide")
 		}
-		text = defaultQuestion
+		text = defaultQuestion[cfg.AI.Language]
 	}
 
 	a.askMu.Lock()
@@ -107,8 +99,11 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 		defer frame.Release()
 	}
 
+	// Past exchanges sent as context: text only, screenshots are never kept
+	// (only the current question carries one) to bound tokens.
 	a.convMu.Lock()
-	history := slices.Clone(a.history)
+	keep := 2 * cfg.AI.HistoryTurns
+	history := slices.Clone(a.history[max(0, len(a.history)-keep):])
 	a.convMu.Unlock()
 	question := ai.Message{Role: ai.RoleUser, Text: text}
 	if frame != nil {
@@ -117,7 +112,10 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 	history = append(history, question)
 
 	start := time.Now()
-	stream, err := a.llm.Stream(ctx, ai.Persona, history)
+	system := ai.SystemPrompt(ai.PromptOptions{
+		Language: cfg.AI.Language, Length: cfg.AI.Length, Custom: cfg.AI.CustomInstructions,
+	})
+	stream, err := llm.Stream(ctx, system, history)
 	if err != nil {
 		cancel()
 		return Turn{}, err
@@ -134,13 +132,13 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 
 	done := make(chan struct{})
 	a.askCancel, a.askDone = cancel, done
-	go a.answer(ctx, cancel, done, turn.ID, stream, start)
+	go a.answer(ctx, cancel, done, turn.ID, stream, start, cfg.Voice.ReadAnswers)
 	return turn, nil
 }
 
 // answer forwards the stream to the UI and, sentence by sentence, to the
 // voice, then records the reply in the history.
-func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan struct{}, id int, stream <-chan ai.Chunk, start time.Time) {
+func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan struct{}, id int, stream <-chan ai.Chunk, start time.Time, readAloud bool) {
 	defer close(done)
 	defer cancel()
 
@@ -167,10 +165,12 @@ func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan s
 		full.WriteString(c.Text)
 		runtime.EventsEmit(a.ctx, EventDelta, Delta{ID: id, Text: c.Text})
 		for _, s := range splitter.Push(c.Text) {
-			sentences <- s
+			if readAloud {
+				sentences <- s
+			}
 		}
 	}
-	if rest := splitter.Flush(); rest != "" && streamErr == nil {
+	if rest := splitter.Flush(); rest != "" && streamErr == nil && readAloud {
 		sentences <- rest
 	}
 	close(sentences)
@@ -188,8 +188,9 @@ func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan s
 	}
 	a.convMu.Lock()
 	a.history = append(a.history, ai.Message{Role: ai.RoleModel, Text: reply})
-	if n := len(a.history); n > maxHistory {
-		a.history = slices.Delete(a.history, 0, n-maxHistory)
+	// The settings cap what is sent; this only bounds memory.
+	if n := len(a.history); n > 40 {
+		a.history = slices.Delete(a.history, 0, n-40)
 	}
 	a.convMu.Unlock()
 

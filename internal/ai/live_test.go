@@ -16,7 +16,7 @@ func TestGeminiLive(t *testing.T) {
 	if os.Getenv("SPARK_AI_LIVE") != "1" || key == "" {
 		t.Skip("set SPARK_AI_LIVE=1 and SPARK_LLM_API_KEY")
 	}
-	g := NewGemini(key, os.Getenv("SPARK_LLM_MODEL"), "")
+	g := NewGemini(key, os.Getenv("SPARK_LLM_MODEL"), "", "low")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -30,7 +30,7 @@ func TestGeminiLive(t *testing.T) {
 	}
 
 	start := time.Now()
-	ch, err := g.Stream(ctx, Persona, []Message{q})
+	ch, err := g.Stream(ctx, SystemPrompt(PromptOptions{Language: "fr"}), []Message{q})
 	if err != nil {
 		t.Fatal(err)
 	}

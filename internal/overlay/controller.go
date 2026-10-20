@@ -40,7 +40,7 @@ const defaultPollInterval = 16 * time.Millisecond
 // Controller owns the click-through state machine.
 type Controller struct {
 	native   platform
-	interval time.Duration
+	interval atomic.Int64 // time.Duration between two cursor reads
 
 	// regions is swapped atomically by the frontend and read lock-free by
 	// the polling loop, so the hot path never allocates nor contends.
@@ -58,7 +58,8 @@ type Controller struct {
 }
 
 func NewController() *Controller {
-	c := &Controller{native: newPlatform(), interval: defaultPollInterval}
+	c := &Controller{native: newPlatform()}
+	c.interval.Store(int64(defaultPollInterval))
 	empty := []Rect{}
 	c.regions.Store(&empty)
 	return c
@@ -86,6 +87,13 @@ func (c *Controller) SetCaptured(v bool) {
 	c.captured.Store(v)
 }
 
+// SetPollRate changes how often the cursor is read (Hz).
+func (c *Controller) SetPollRate(hz int) {
+	if hz > 0 {
+		c.interval.Store(int64(time.Second / time.Duration(hz)))
+	}
+}
+
 // SetPaused suspends (or resumes) cursor polling.
 func (c *Controller) SetPaused(v bool) {
 	c.paused.Store(v)
@@ -109,7 +117,8 @@ func (c *Controller) setIgnore(v bool) {
 }
 
 func (c *Controller) loop(ctx context.Context) {
-	t := time.NewTicker(c.interval)
+	interval := time.Duration(c.interval.Load())
+	t := time.NewTicker(interval)
 	defer t.Stop()
 
 	ignoring := true
@@ -124,6 +133,10 @@ func (c *Controller) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+		if d := time.Duration(c.interval.Load()); d != interval {
+			interval = d
+			t.Reset(d)
 		}
 
 		if c.paused.Load() {

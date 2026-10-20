@@ -22,35 +22,52 @@ Plateformes : macOS, Windows.
 wails dev
 ```
 
+Tout se règle dans la **page de paramètres** (roue dentée du chat ou ⌥⇧P) :
+fournisseur d'IA et clé, modèle, réflexion, langue, voix, vision, micro,
+raccourcis, apparence… Les changements s'appliquent immédiatement.
+
+Variables d'environnement utiles en développement (elles ne remplacent pas les
+paramètres, sauf mention) :
+
 | Variable | Effet |
 |---|---|
-| `SPARK_LLM_API_KEY` (ou `GEMINI_API_KEY`) | clé de l'IA (voir ci-dessous) |
-| `SPARK_LLM_MODEL` | modèle Gemini, `gemini-3.6-flash` par défaut (`gemini-3.5-flash-lite` : ~4× plus rapide, moins fin) |
-| `SPARK_DEBUG=1` | logs du click-through et des raccourcis, zones cliquables en pointillés jaunes |
-| `SPARK_MUTE=1` | pas de voix |
-| `SPARK_VOICE="Audrey (Premium)"` | force une voix système |
+| `SPARK_DEBUG=1` | logs détaillés, zones cliquables en pointillés jaunes |
+| `SPARK_MUTE=1` | coupe la voix quels que soient les paramètres |
+| `SPARK_LLM_MODEL` | force le modèle du fournisseur actif |
+| `SPARK_LLM_BASE_URL` | force l'adresse de l'API (proxy, faux serveur de test) |
+| `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | clés de repli si aucune n'est dans le trousseau |
 
 Itérer sur l'UI dans un navigateur (faux fond d'écran, accueil simulé) :
 `npm --prefix frontend run dev` puis http://localhost:5173 (`?debug` pour les zones).
 
-### IA (Gemini)
+### IA
 
-1. Crée une clé gratuite sur [Google AI Studio](https://aistudio.google.com/apikey).
-2. Ajoute-la à ton shell (jamais dans le repo) : `export SPARK_LLM_API_KEY=...`
-   dans `~/.zshrc`, puis ouvre un nouveau terminal.
-3. `wails dev` : le voyant **IA** du chat s'allume.
+Trois fournisseurs, au choix dans Paramètres › Intelligence :
+
+| Fournisseur | Clé | Remarque |
+|---|---|---|
+| Gemini | [Google AI Studio](https://aistudio.google.com/apikey) (gratuite) | rapide ; défaut `gemini-3.6-flash` |
+| Claude | [console.anthropic.com](https://console.anthropic.com) | analyse la plus fine ; défaut `claude-opus-5-5` |
+| OpenAI & compatibles | [platform.openai.com](https://platform.openai.com/api-keys) | aussi OpenRouter, Mistral, Groq, Ollama, LM Studio… via l'adresse de l'API |
+
+Les clés sont rangées dans le **trousseau du système** (Trousseau macOS,
+Gestionnaire d'identification Windows), jamais en clair sur le disque. Le
+bouton « Lister » récupère les modèles de ton compte, « Tester » mesure la
+latence.
 
 Chaque question part avec une capture prise à l'instant (œil du chat pour
-couper la vision). ⚠️ Sur le niveau gratuit, Google peut utiliser les requêtes
-(captures comprises) pour améliorer ses produits : coupe la vision sur les
-écrans sensibles, ou passe au niveau payant.
+couper la vision). ⚠️ Sur le niveau gratuit de Gemini, Google peut utiliser
+les requêtes (captures comprises) pour améliorer ses produits.
 
 ### Raccourcis
+
+Tous réassignables dans les paramètres.
 
 | | |
 |---|---|
 | ⌥⇧A / Alt+Shift+A | ouvrir/fermer A.R.I.A (prend puis rend le focus clavier) |
 | ⌥⇧H / Alt+Shift+H | masquer/afficher Spark |
+| ⌥⇧P / Alt+Shift+P | paramètres |
 | Échap | fermer le chat |
 
 Le bouton se déplace par glisser-déposer ; sa position est mémorisée
@@ -80,10 +97,10 @@ main.go                 options de fenêtre Wails (frameless, transparente)
 internal/app            pont Wails ↔ modules
 internal/overlay        click-through natif (darwin / windows)
 internal/vision         capture d'écran        (à venir)
-internal/ai             LLM multimodal (Gemini, streaming SSE)
+internal/ai             LLM multimodal : Gemini (REST), Claude (SDK officiel), OpenAI-compatible
 internal/audio          TTS système (say / SAPI), STT à venir
 internal/hotkey         raccourcis globaux (Carbon / RegisterHotKey)
-internal/config         variables d'env + réglages persistants
+internal/config         paramètres persistants, clés (trousseau), variables d'env
 frontend/src            UI React + Tailwind
 build/brand             logo et icône (SVG sources)
 docs/ARCHITECTURE.md    choix techniques et feuille de route

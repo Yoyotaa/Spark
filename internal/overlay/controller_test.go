@@ -59,7 +59,8 @@ func waitIgnore(t *testing.T, f *fakePlatform, want bool) {
 func TestControllerTogglesClickThrough(t *testing.T) {
 	f := &fakePlatform{x: 500, y: 500}
 	c := NewController()
-	c.native, c.interval = f, time.Millisecond
+	c.native = f
+	c.interval.Store(int64(time.Millisecond))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

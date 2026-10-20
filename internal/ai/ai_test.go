@@ -60,7 +60,7 @@ func TestGeminiStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g := NewGemini("k", "m", srv.URL)
+	g := NewGemini("k", "m", srv.URL, "low")
 	ch, err := g.Stream(context.Background(), "sys", []Message{{Role: RoleUser, Text: "Que faire ?", Image: []byte{0xff, 0xd8}}})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestGeminiRetries(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			g := NewGemini("k", "m", srv.URL)
+			g := NewGemini("k", "m", srv.URL, "low")
 			ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
 			if err != nil {
 				t.Fatal(err)
@@ -130,7 +130,7 @@ func TestGeminiFriendlyErrors(t *testing.T) {
 			w.WriteHeader(status)
 			fmt.Fprint(w, `{"error":{"message":"boom"}}`)
 		}))
-		g := NewGemini("k", "m", srv.URL)
+		g := NewGemini("k", "m", srv.URL, "low")
 		_, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
 		srv.Close()
 		if err == nil || !strings.Contains(err.Error(), want) {
