@@ -9,6 +9,8 @@ package overlay
 #import <Cocoa/Cocoa.h>
 
 static NSWindow *sparkWindow = nil;
+// Last application that was active before Spark, to hand focus back.
+static NSRunningApplication *sparkPreviousApp = nil;
 
 // AppKit is not thread-safe: every window access is marshalled to the main
 // thread. dispatch_sync is fine here because the main thread never waits on
@@ -51,6 +53,23 @@ static int sparkAttach(void) {
 		NSScreen *screen = [w screen] ?: [NSScreen mainScreen];
 		[w setFrame:[screen frame] display:YES];
 		[w orderFrontRegardless];
+
+		NSRunningApplication *front = [[NSWorkspace sharedWorkspace] frontmostApplication];
+		if (![front isEqual:[NSRunningApplication currentApplication]]) {
+			sparkPreviousApp = front;
+		}
+		// Track the last other app that was activated, whether Spark got the
+		// focus through a hotkey or a mouse click.
+		[[[NSWorkspace sharedWorkspace] notificationCenter]
+			addObserverForName:NSWorkspaceDidActivateApplicationNotification
+			            object:nil
+			             queue:[NSOperationQueue mainQueue]
+			        usingBlock:^(NSNotification *n) {
+				NSRunningApplication *app = n.userInfo[NSWorkspaceApplicationKey];
+				if (![app isEqual:[NSRunningApplication currentApplication]]) {
+					sparkPreviousApp = app;
+				}
+			}];
 		ok = 1;
 	});
 	return ok;
@@ -75,6 +94,25 @@ static int sparkCursor(double *x, double *y) {
 static void sparkSetIgnoreMouse(int ignore) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		[sparkWindow setIgnoresMouseEvents:(ignore ? YES : NO)];
+	});
+}
+
+static void sparkFocus(void) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+		[NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+		[sparkWindow makeKeyAndOrderFront:nil];
+	});
+}
+
+static void sparkRestoreFocus(void) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		if (![NSApp isActive] || sparkPreviousApp == nil || [sparkPreviousApp isTerminated]) {
+			return;
+		}
+		[sparkPreviousApp activateWithOptions:0];
 	});
 }
 */
@@ -108,3 +146,6 @@ func (darwinPlatform) setIgnoreMouse(ignore bool) {
 	}
 	C.sparkSetIgnoreMouse(v)
 }
+
+func (darwinPlatform) focus()        { C.sparkFocus() }
+func (darwinPlatform) restoreFocus() { C.sparkRestoreFocus() }

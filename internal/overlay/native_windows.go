@@ -4,6 +4,7 @@ package overlay
 
 import (
 	"errors"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -39,6 +40,8 @@ var (
 	procGetCursorPos             = user32.NewProc("GetCursorPos")
 	procScreenToClient           = user32.NewProc("ScreenToClient")
 	procGetDpiForWindow          = user32.NewProc("GetDpiForWindow")
+	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 )
 
 type point struct{ X, Y int32 }
@@ -54,7 +57,8 @@ type monitorInfo struct {
 
 type windowsPlatform struct {
 	hwnd  uintptr
-	scale float64 // physical px per CSS px
+	scale float64        // physical px per CSS px
+	prev  atomic.Uintptr // foreground window before Spark took focus
 }
 
 func newPlatform() platform { return &windowsPlatform{scale: 1} }
@@ -110,4 +114,19 @@ func (p *windowsPlatform) setIgnoreMouse(ignore bool) {
 		ex &^= wsExTransparent
 	}
 	procSetWindowLongPtrW.Call(p.hwnd, uintptr(gwlExStyle), ex)
+}
+
+func (p *windowsPlatform) focus() {
+	if fg, _, _ := procGetForegroundWindow.Call(); fg != 0 && fg != p.hwnd {
+		p.prev.Store(fg)
+	}
+	// Allowed right after a WM_HOTKEY: the hotkey counts as the last input
+	// event, which grants this process the right to set the foreground.
+	procSetForegroundWindow.Call(p.hwnd)
+}
+
+func (p *windowsPlatform) restoreFocus() {
+	if prev := p.prev.Swap(0); prev != 0 {
+		procSetForegroundWindow.Call(prev)
+	}
 }

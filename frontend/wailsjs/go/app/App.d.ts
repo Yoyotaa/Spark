@@ -4,6 +4,8 @@ import {overlay} from '../models';
 
 export function Debug():Promise<boolean>;
 
+export function SetChatOpen(arg1:boolean):Promise<void>;
+
 export function SetInteractiveRegions(arg1:Array<overlay.Rect>):Promise<void>;
 
 export function SetMouseCaptured(arg1:boolean):Promise<void>;

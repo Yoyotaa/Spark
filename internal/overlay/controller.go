@@ -25,6 +25,10 @@ type platform interface {
 	cursor() (x, y float64, ok bool)
 	// setIgnoreMouse toggles native click-through.
 	setIgnoreMouse(ignore bool)
+	// focus gives keyboard focus to the overlay, remembering the app that
+	// had it; restoreFocus hands it back.
+	focus()
+	restoreFocus()
 }
 
 // WindowClassName is given to Wails (options.Windows.WindowClassName) so the
@@ -48,6 +52,9 @@ type Controller struct {
 	// captured forces the window to keep the mouse (e.g. chat opened with
 	// a hotkey), regardless of the cursor position.
 	captured atomic.Bool
+	// paused stops cursor polling and keeps the window click-through, used
+	// while the overlay is hidden.
+	paused atomic.Bool
 }
 
 func NewController() *Controller {
@@ -79,6 +86,28 @@ func (c *Controller) SetCaptured(v bool) {
 	c.captured.Store(v)
 }
 
+// SetPaused suspends (or resumes) cursor polling.
+func (c *Controller) SetPaused(v bool) {
+	c.paused.Store(v)
+}
+
+// Focus gives keyboard focus to the overlay (chat input).
+func (c *Controller) Focus() {
+	c.native.focus()
+}
+
+// RestoreFocus gives keyboard focus back to the previously active app.
+func (c *Controller) RestoreFocus() {
+	c.native.restoreFocus()
+}
+
+func (c *Controller) setIgnore(v bool) {
+	c.native.setIgnoreMouse(v)
+	if c.OnToggle != nil {
+		c.OnToggle(v)
+	}
+}
+
 func (c *Controller) loop(ctx context.Context) {
 	t := time.NewTicker(c.interval)
 	defer t.Stop()
@@ -97,6 +126,15 @@ func (c *Controller) loop(ctx context.Context) {
 		case <-t.C:
 		}
 
+		if c.paused.Load() {
+			if !ignoring {
+				c.setIgnore(true)
+				ignoring = true
+			}
+			dirty = true
+			continue
+		}
+
 		x, y, ok := c.native.cursor()
 		if !ok {
 			continue
@@ -113,11 +151,8 @@ func (c *Controller) loop(ctx context.Context) {
 
 		want := !captured && !hit(*regions, x, y)
 		if want != ignoring {
-			c.native.setIgnoreMouse(want)
+			c.setIgnore(want)
 			ignoring = want
-			if c.OnToggle != nil {
-				c.OnToggle(want)
-			}
 		}
 	}
 }

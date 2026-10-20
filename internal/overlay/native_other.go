@@ -12,3 +12,5 @@ func newPlatform() platform { return nopPlatform{} }
 func (nopPlatform) attach() error                    { return errors.New("overlay: unsupported platform") }
 func (nopPlatform) cursor() (float64, float64, bool) { return 0, 0, false }
 func (nopPlatform) setIgnoreMouse(bool)              {}
+func (nopPlatform) focus()                           {}
+func (nopPlatform) restoreFocus()                    {}

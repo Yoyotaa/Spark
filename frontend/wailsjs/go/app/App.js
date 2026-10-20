@@ -6,6 +6,10 @@ export function Debug() {
   return window['go']['app']['App']['Debug']();
 }
 
+export function SetChatOpen(arg1) {
+  return window['go']['app']['App']['SetChatOpen'](arg1);
+}
+
 export function SetInteractiveRegions(arg1) {
   return window['go']['app']['App']['SetInteractiveRegions'](arg1);
 }

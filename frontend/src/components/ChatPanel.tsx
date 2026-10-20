@@ -1,14 +1,26 @@
-import {useState, type FormEvent} from 'react'
+import {useEffect, useRef, useState, type FormEvent} from 'react'
 
 type Message = {id: number; from: 'user' | 'aria'; text: string}
 
 let nextId = 1
 
-export function ChatPanel() {
+type Props = {
+  open: boolean
+  onClose: () => void
+}
+
+// Stays mounted while closed so the conversation survives; `hidden` removes
+// it from the layout, hence from the interactive regions.
+export function ChatPanel({open, onClose}: Props) {
+  const input = useRef<HTMLInputElement>(null)
   const [messages, setMessages] = useState<Message[]>([
     {id: 0, from: 'aria', text: 'A.R.I.A en ligne. Je vois ton écran dès que tu me le demandes.'},
   ])
   const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    if (open) input.current?.focus()
+  }, [open])
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -26,10 +38,13 @@ export function ChatPanel() {
   return (
     <section
       data-interactive
+      hidden={!open}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
       className="flex h-96 w-80 flex-col overflow-hidden rounded-2xl border border-aria/30 bg-panel text-sm text-slate-100 shadow-2xl backdrop-blur-xl"
     >
-      <header className="border-b border-white/10 px-4 py-2.5 text-xs font-semibold tracking-[0.3em] text-aria">
-        A.R.I.A
+      <header className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+        <span className="text-xs font-semibold tracking-[0.3em] text-aria">A.R.I.A</span>
+        <kbd className="text-[10px] text-slate-500">⌥⇧A · Échap</kbd>
       </header>
       <ol className="flex-1 space-y-2 overflow-y-auto px-4 py-3 select-text">
         {messages.map((m) => (
@@ -45,7 +60,7 @@ export function ChatPanel() {
       </ol>
       <form onSubmit={submit} className="border-t border-white/10 p-2">
         <input
-          autoFocus
+          ref={input}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Demande à A.R.I.A…"

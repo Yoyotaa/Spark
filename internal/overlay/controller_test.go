@@ -29,6 +29,9 @@ func (f *fakePlatform) setIgnoreMouse(v bool) {
 	f.toggles++
 }
 
+func (f *fakePlatform) focus()        {}
+func (f *fakePlatform) restoreFocus() {}
+
 func (f *fakePlatform) move(x, y float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -75,6 +78,16 @@ func TestControllerTogglesClickThrough(t *testing.T) {
 	c.SetCaptured(true)
 	waitIgnore(t, f, false)
 	c.SetCaptured(false)
+	waitIgnore(t, f, true)
+
+	// Paused: click-through even above a region.
+	f.move(50, 30)
+	waitIgnore(t, f, false)
+	c.SetPaused(true)
+	waitIgnore(t, f, true)
+	c.SetPaused(false)
+	waitIgnore(t, f, false)
+	f.move(200, 200)
 	waitIgnore(t, f, true)
 
 	// Steady state: no redundant native calls.
