@@ -4,11 +4,16 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"spark/internal/audio"
 	"spark/internal/config"
 	"spark/internal/hotkey"
 	"spark/internal/overlay"
@@ -18,23 +23,33 @@ import (
 const (
 	EventToggleChat = "aria:toggle-chat"
 	EventVisibility = "spark:visibility"
+	EventSay        = "aria:say"      // text A.R.I.A is saying
+	EventSpeaking   = "aria:speaking" // bool, voice playing
 )
 
 type App struct {
-	cfg     config.Config
-	overlay *overlay.Controller
-	visible atomic.Bool
+	cfg      config.Config
+	settings *config.Store // nil if the config dir is unusable
+	overlay  *overlay.Controller
+	tts      audio.TTS
+	visible  atomic.Bool
+	boot     sync.Once
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-func New(cfg config.Config) *App {
+func New(cfg config.Config, settings *config.Store) *App {
 	ov := overlay.NewController()
 	if cfg.Debug {
 		ov.OnToggle = func(ignoring bool) { log.Printf("overlay: click-through=%v", ignoring) }
 	}
-	a := &App{cfg: cfg, overlay: ov}
+	a := &App{cfg: cfg, settings: settings, overlay: ov}
+	if !cfg.Mute {
+		tts := audio.NewSystemTTS(cfg.Voice)
+		a.debugf("voice: %q", tts.Voice())
+		a.tts = tts
+	}
 	a.visible.Store(true)
 	return a
 }
@@ -67,6 +82,36 @@ func (a *App) debugf(format string, args ...any) {
 	if a.cfg.Debug {
 		log.Printf(format, args...)
 	}
+}
+
+// Boot is called by the frontend once it listens to events. It plays the
+// welcome sequence, only once per process (dev hot reloads call it again).
+func (a *App) Boot() {
+	a.boot.Do(func() { go a.greet() })
+}
+
+func (a *App) greet() {
+	format, salut := greeting(time.Now())
+	a.say(fmt.Sprintf(format, salut))
+}
+
+// say shows text in the UI and speaks it.
+func (a *App) say(text string) {
+	runtime.EventsEmit(a.ctx, EventSay, text)
+	if a.tts == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, EventSpeaking, true)
+	defer runtime.EventsEmit(a.ctx, EventSpeaking, false)
+	if err := a.tts.Speak(a.ctx, spoken(text)); err != nil && a.ctx.Err() == nil {
+		log.Printf("tts: %v", err)
+	}
+}
+
+// spoken adapts displayed text for the voice: "A.R.I.A" would be spelled
+// out letter by letter.
+func spoken(text string) string {
+	return strings.ReplaceAll(text, "A.R.I.A", "Aria")
 }
 
 func (a *App) toggleChat() {
@@ -108,6 +153,22 @@ func (a *App) SetChatOpen(open bool) {
 	} else {
 		a.overlay.RestoreFocus()
 	}
+}
+
+// GetSettings returns the persisted user preferences.
+func (a *App) GetSettings() config.Settings {
+	if a.settings == nil {
+		return config.Settings{}
+	}
+	return a.settings.Get()
+}
+
+// SetOrbPosition persists where the user dropped the A.R.I.A button.
+func (a *App) SetOrbPosition(x, y float64) error {
+	if a.settings == nil {
+		return nil
+	}
+	return a.settings.Update(func(s *config.Settings) { s.Orb = &config.Point{X: x, Y: y} })
 }
 
 func (a *App) Debug() bool {

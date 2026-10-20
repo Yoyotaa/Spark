@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="g" x1="12" y1="10" x2="52" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset=".5" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1322"/>
+      <stop offset="1" stop-color="#05070d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="512" cy="512" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity=".35"/>
+      <stop offset=".55" stop-color="#8b5cf6" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M64 0H0V64" fill="none" stroke="#22d3ee" stroke-opacity=".07" stroke-width="2"/>
+    </pattern>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#grid)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#22d3ee" stroke-opacity=".28" stroke-width="3"/>
+  <g transform="translate(512 512) scale(9.5) translate(-32 -32)">
+    <circle cx="32" cy="32" r="28" fill="none" stroke="url(#g)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="44.6 14" transform="rotate(-62 32 32)"/>
+    <circle cx="32" cy="32" r="22.5" fill="none" stroke="#22d3ee" stroke-opacity=".25" stroke-width=".8"/>
+    <path d="M32 8.5Q33.9 30.1 52.5 32Q33.9 33.9 32 55.5Q30.1 33.9 11.5 32Q30.1 30.1 32 8.5Z" fill="url(#g)"/>
+    <circle cx="32" cy="32" r="4" fill="#22d3ee" fill-opacity=".35"/><circle cx="32" cy="32" r="1.9" fill="#ecfeff"/>
+  </g>
+</svg>

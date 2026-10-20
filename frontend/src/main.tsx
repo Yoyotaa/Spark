@@ -1,14 +1,16 @@
 import React from 'react'
 import {createRoot} from 'react-dom/client'
+import '@fontsource-variable/space-grotesk'
+import '@fontsource-variable/jetbrains-mono'
 import './style.css'
 import App from './App'
 
-const container = document.getElementById('root')
+// Outside Wails (`npm run dev` in a browser) there is no desktop behind the
+// transparent page: paint a fake one to judge the design.
+if (!('go' in window)) document.body.classList.add('preview')
 
-const root = createRoot(container!)
-
-root.render(
-    <React.StrictMode>
-        <App/>
-    </React.StrictMode>
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
 )

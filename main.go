@@ -19,9 +19,13 @@ import (
 var assets embed.FS
 
 func main() {
-	a := app.New(config.Load())
+	settings, err := config.OpenStore()
+	if err != nil {
+		log.Printf("settings not persisted: %v", err)
+	}
+	a := app.New(config.Load(), settings)
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title: "Spark",
 		// Placeholder size: the overlay resizes itself to the full screen
 		// once attached (see overlay.platform.attach).

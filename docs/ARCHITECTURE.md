@@ -58,6 +58,24 @@ Exclure la fenêtre des captures est essentiel : le module vision ne doit pas
 « se voir » lui-même. Sur macOS récent, il faudra aussi exclure l'application
 dans le `SCContentFilter` de ScreenCaptureKit.
 
+## Interface
+
+- **Identité** : étincelle à 4 branches dans un anneau HUD de trois arcs, dégradé
+  teal → cyan → violet. Sources dans `build/brand/` ; `build/appicon.png` en
+  dérive (Wails génère `.icns` et `.ico`). Polices Space Grotesk et JetBrains
+  Mono embarquées (aucun appel réseau).
+- **Sobriété GPU** : au repos, rien n'est animé. L'anneau ne tourne que quand
+  A.R.I.A parle ou que le chat est ouvert. Toutes les animations ne touchent
+  que `transform` et `opacity` (compositeur), et `prefers-reduced-motion` est
+  respecté.
+- **Drag** : pendant le glisser, l'ancre est déplacée directement dans le DOM
+  (pas de rendu React par frame) et la fenêtre garde la souris
+  (`SetMouseCaptured`) pour ne pas perdre le geste. La position est validée
+  au lâcher puis persistée côté Go.
+- **Accueil** : le frontend appelle `Boot()` une fois abonné aux événements
+  (pas de course au démarrage) ; Go le joue une seule fois par processus
+  (`sync.Once`, robuste au rechargement à chaud).
+
 ## Pistes de performance déjà prévues
 
 - **Vision** : capture à la demande plutôt qu'un flux continu (c'est le LLM qui
@@ -76,7 +94,9 @@ dans le `SCContentFilter` de ScreenCaptureKit.
 | Phase | Contenu | État |
 |---|---|---|
 | 1 | Fenêtre transparente + click-through natif mac/Windows | ✅ |
-| 1.1 | Raccourci global (afficher/masquer, focus du chat), icône dans la barre de menus / zone de notification | |
+| 1.1 | Raccourcis globaux, focus clavier rendu à l'app précédente | ✅ |
+| 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
+| 1.3 | Icône dans la barre de menus / zone de notification, réglages | |
 | 2 | Vision : capture (ScreenCaptureKit / DXGI Desktop Duplication), pool, JPEG | |
 | 3 | IA : fournisseur multimodal, streaming, persona A.R.I.A | |
 | 4 | Audio : STT push-to-talk, TTS voix féminine | |
