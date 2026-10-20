@@ -15,7 +15,7 @@ l'utilisateur via A.R.I.A. Cibles : **macOS** et **Windows**.
 ┌──────────────────────────────────────┴───────────────── Backend (Go) ──────────────┐
 │ internal/app      Pont Wails : cycle de vie, méthodes exposées au front            │
 │ internal/overlay  Fenêtre transparente + click-through natif   ✅ POC              │
-│ internal/vision   Capture d'écran (pool de buffers, JPEG, base64)   phase 2        │
+│ internal/vision   Capture d'écran (pool de buffers, JPEG, base64)   ✅             │
 │ internal/ai       Fournisseur LLM multimodal, réponses streamées    phase 3        │
 │ internal/audio    STT (commandes vocales) / TTS (voix d'A.R.I.A)    phase 4        │
 │ internal/config   Réglages, secrets via variables d'environnement                  │
@@ -76,12 +76,29 @@ dans le `SCContentFilter` de ScreenCaptureKit.
   (pas de course au démarrage) ; Go le joue une seule fois par processus
   (`sync.Once`, robuste au rechargement à chaud).
 
-## Pistes de performance déjà prévues
+## Vision
 
-- **Vision** : capture à la demande plutôt qu'un flux continu (c'est le LLM qui
-  limite le débit). Image réduite (≤ 1280 px), encodée en JPEG dans des buffers
-  `sync.Pool`, puis `base64.StdEncoding.Encode` dans un buffer réutilisé (pas de
-  copie en `string`). `Frame.Release()` rend le buffer au pool.
+Capture **à la demande** (bouton 👁 du chat), jamais en flux continu : c'est le
+LLM qui limite le débit, pas la capture.
+
+| | macOS | Windows |
+|---|---|---|
+| API | ScreenCaptureKit `SCScreenshotManager` (macOS 14+) | GDI `StretchBlt` (HALFTONE) |
+| Réduction | faite par le système (GPU) à la taille cible | faite par GDI à la taille cible |
+| JPEG | ImageIO (accéléré matériel) | `image/jpeg`, image RGBA réutilisée |
+| Exclusion de Spark | `SCContentFilter` excluant notre processus | `WDA_EXCLUDEFROMCAPTURE` |
+| Permission | Enregistrement de l'écran (TCC) | aucune |
+
+- Côté longue ≤ 1568 px (au-delà, les LLM vision réduisent de toute façon),
+  JPEG qualité 72 : ~175 Ko, ~110 ms à chaud sur un M3.
+- Les octets arrivent dans un buffer `sync.Pool` (une seule copie depuis le
+  natif) : une capture coûte 1 allocation de 84 o côté Go. `Frame.Release()` rend
+  le buffer ; `AppendBase64` encode directement dans le buffer de l'appelant.
+- La dernière capture est conservée côté Go (`App.lastFrame`) pour la requête
+  IA de la phase 3 ; le frontend n'en reçoit qu'une data URL pour la miniature.
+- Test réel optionnel : `SPARK_VISION_E2E=1 go test -run E2E -v ./internal/vision`.
+
+## Pistes de performance déjà prévues
 - **IA** : streaming des tokens vers l'interface **et** vers la synthèse vocale,
   phrase par phrase : A.R.I.A commence à parler avant la fin de la génération.
 - **Audio** : push-to-talk d'abord (pas de micro ouvert en permanence), trames
@@ -97,7 +114,7 @@ dans le `SCContentFilter` de ScreenCaptureKit.
 | 1.1 | Raccourcis globaux, focus clavier rendu à l'app précédente | ✅ |
 | 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
 | 1.3 | Icône dans la barre de menus / zone de notification, réglages | |
-| 2 | Vision : capture (ScreenCaptureKit / DXGI Desktop Duplication), pool, JPEG | |
+| 2 | Vision : capture à la demande (ScreenCaptureKit / GDI), pool, JPEG | ✅ |
 | 3 | IA : fournisseur multimodal, streaming, persona A.R.I.A | |
 | 4 | Audio : STT push-to-talk, TTS voix féminine | |
 | 5 | Mode proactif, réglages, packaging (signature, installeur NSIS) | |
@@ -114,5 +131,10 @@ dans le `SCContentFilter` de ScreenCaptureKit.
   récents).
 - **Multi-écran** : pour l'instant, l'overlay couvre l'écran sur lequel la
   fenêtre s'ouvre.
-- **Permissions macOS** : la capture d'écran (phase 2) et le micro (phase 4)
-  demanderont des autorisations : il faudra les déclarer dans `Info.plist`.
+- **Permissions macOS** : la capture demande « Enregistrement de l'écran ». En
+  dev, chaque build est signé ad hoc avec une nouvelle empreinte : macOS peut
+  redemander l'autorisation après un rebuild (retirer puis rajouter Spark dans
+  Réglages). Une signature stable (certificat Developer ID) règlera ça. Le micro
+  (phase 4) demandera `NSMicrophoneUsageDescription` dans `Info.plist`.
+- **macOS minimum** : 12.3 pour lancer l'app (ScreenCaptureKit est lié), 14 pour
+  la capture.

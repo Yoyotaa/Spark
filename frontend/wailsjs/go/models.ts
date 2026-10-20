@@ -1,3 +1,28 @@
+export namespace app {
+	
+	export class Capture {
+	    width: number;
+	    height: number;
+	    bytes: number;
+	    millis: number;
+	    dataUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Capture(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.width = source["width"];
+	        this.height = source["height"];
+	        this.bytes = source["bytes"];
+	        this.millis = source["millis"];
+	        this.dataUrl = source["dataUrl"];
+	    }
+	}
+
+}
+
 export namespace config {
 	
 	export class Point {

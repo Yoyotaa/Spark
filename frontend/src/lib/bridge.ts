@@ -1,7 +1,7 @@
 // Thin wrapper over the generated Wails bindings so the UI also runs in a
 // plain browser (`npm run dev`) where window.go does not exist.
 import * as App from '../../wailsjs/go/app/App'
-import type {config, overlay} from '../../wailsjs/go/models'
+import type {app, config, overlay} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
 
 const inWails = typeof window !== 'undefined' && 'go' in window
@@ -65,6 +65,14 @@ export async function getSettings(): Promise<Partial<config.Settings>> {
 
 export function saveOrbPosition(p: Point): void {
   if (inWails) void App.SetOrbPosition(p.x, p.y)
+}
+
+export type Capture = Pick<app.Capture, 'width' | 'height' | 'bytes' | 'millis' | 'dataUrl'>
+
+/** Screenshot without Spark itself; rejects with a user-facing message. */
+export async function captureScreen(): Promise<Capture> {
+  if (!inWails) throw new Error('Capture indisponible dans le navigateur')
+  return App.CaptureScreen()
 }
 
 export async function isDebug(): Promise<boolean> {

@@ -4,7 +4,7 @@ import {ChatPanel, type Message} from './components/ChatPanel'
 import {ORB_SIZE, Orb} from './components/Orb'
 import {useDrag} from './hooks/useDrag'
 import * as bridge from './lib/bridge'
-import type {Point} from './lib/bridge'
+import type {Capture, Point} from './lib/bridge'
 import {startRegionTracking} from './overlay/regions'
 
 const MARGIN = 16
@@ -107,13 +107,16 @@ export default function App() {
     bridge.setChatOpen(chatOpen)
   }, [chatOpen])
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, image?: Capture) => {
     const at = new Date()
+    // Placeholder until the AI module (phase 3) is wired.
+    const reply = image
+      ? `Capture reçue (${image.width}×${image.height}). Je pourrai l’analyser dès que mon module IA sera connecté.`
+      : 'Mon module d’analyse n’est pas encore connecté. Bientôt.'
     setMessages((m) => [
       ...m,
-      {id: nextId++, from: 'user', text, at},
-      // Placeholder until the AI module (phase 3) is wired.
-      {id: nextId++, from: 'aria', text: 'Mon module d’analyse n’est pas encore connecté. Bientôt.', at},
+      {id: nextId++, from: 'user', text, at, image},
+      {id: nextId++, from: 'aria', text: reply, at},
     ])
   }, [])
 

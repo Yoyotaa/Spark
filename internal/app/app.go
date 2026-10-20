@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"spark/internal/config"
 	"spark/internal/hotkey"
 	"spark/internal/overlay"
+	"spark/internal/vision"
 )
 
 // Events emitted to the frontend (mirrored in frontend/src/lib/bridge.ts).
@@ -32,8 +34,14 @@ type App struct {
 	settings *config.Store // nil if the config dir is unusable
 	overlay  *overlay.Controller
 	tts      audio.TTS
+	vision   *vision.Service
 	visible  atomic.Bool
 	boot     sync.Once
+
+	// lastFrame is the latest screenshot, kept for the AI request that
+	// will follow (phase 3). Guarded by frameMu.
+	frameMu   sync.Mutex
+	lastFrame *vision.Frame
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -44,7 +52,7 @@ func New(cfg config.Config, settings *config.Store) *App {
 	if cfg.Debug {
 		ov.OnToggle = func(ignoring bool) { log.Printf("overlay: click-through=%v", ignoring) }
 	}
-	a := &App{cfg: cfg, settings: settings, overlay: ov}
+	a := &App{cfg: cfg, settings: settings, overlay: ov, vision: vision.New(vision.DefaultOptions)}
 	if !cfg.Mute {
 		tts := audio.NewSystemTTS(cfg.Voice)
 		a.debugf("voice: %q", tts.Voice())
@@ -169,6 +177,45 @@ func (a *App) SetOrbPosition(x, y float64) error {
 		return nil
 	}
 	return a.settings.Update(func(s *config.Settings) { s.Orb = &config.Point{X: x, Y: y} })
+}
+
+// Capture is what the frontend receives after a screenshot.
+type Capture struct {
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bytes   int    `json:"bytes"`
+	Millis  int64  `json:"millis"`
+	DataURL string `json:"dataUrl"` // thumbnail source for the chat
+}
+
+const captureTimeout = 5 * time.Second
+
+// CaptureScreen takes a screenshot (without Spark itself) and keeps it as
+// the visual context of the next question to A.R.I.A.
+func (a *App) CaptureScreen() (Capture, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, captureTimeout)
+	defer cancel()
+
+	f, err := a.vision.Capture(ctx)
+	if errors.Is(err, vision.ErrPermission) {
+		vision.RequestPermission()
+		return Capture{}, errors.New("autorise Spark dans Réglages Système › Confidentialité › Enregistrement de l'écran, puis relance l'app")
+	}
+	if err != nil {
+		return Capture{}, err
+	}
+	a.debugf("vision: %dx%d, %d KB in %v", f.Width, f.Height, len(f.Data)>>10, f.Took)
+
+	const prefix = "data:image/jpeg;base64,"
+	url := make([]byte, 0, len(prefix)+(len(f.Data)+2)/3*4)
+	url = f.AppendBase64(append(url, prefix...))
+	c := Capture{Width: f.Width, Height: f.Height, Bytes: len(f.Data), Millis: f.Took.Milliseconds(), DataURL: string(url)}
+
+	a.frameMu.Lock()
+	a.lastFrame.Release()
+	a.lastFrame = f
+	a.frameMu.Unlock()
+	return c, nil
 }
 
 func (a *App) Debug() bool {

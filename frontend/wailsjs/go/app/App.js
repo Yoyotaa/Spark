@@ -6,6 +6,10 @@ export function Boot() {
   return window['go']['app']['App']['Boot']();
 }
 
+export function CaptureScreen() {
+  return window['go']['app']['App']['CaptureScreen']();
+}
+
 export function Debug() {
   return window['go']['app']['App']['Debug']();
 }
