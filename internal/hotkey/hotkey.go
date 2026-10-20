@@ -30,7 +30,9 @@ const KeySpace Key = "Space"
 type Binding struct {
 	Mod Modifier
 	Key Key
-	Fn  func()
+	Fn  func() // key pressed
+	// Release, if set, is called when the key is released (push-to-talk).
+	Release func()
 }
 
 func (b Binding) String() string {

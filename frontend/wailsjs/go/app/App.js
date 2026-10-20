@@ -26,8 +26,16 @@ export function GetAppInfo() {
   return window['go']['app']['App']['GetAppInfo']();
 }
 
+export function GetMicStatus() {
+  return window['go']['app']['App']['GetMicStatus']();
+}
+
 export function GetSettings() {
   return window['go']['app']['App']['GetSettings']();
+}
+
+export function Interrupt() {
+  return window['go']['app']['App']['Interrupt']();
 }
 
 export function KeyLabel(arg1) {
@@ -40,6 +48,10 @@ export function ListModels(arg1) {
 
 export function ListVoices() {
   return window['go']['app']['App']['ListVoices']();
+}
+
+export function RequestMicPermission() {
+  return window['go']['app']['App']['RequestMicPermission']();
 }
 
 export function ResetSettings() {
@@ -60,6 +72,10 @@ export function SetInteractiveRegions(arg1) {
 
 export function SetKeyboardFocus(arg1) {
   return window['go']['app']['App']['SetKeyboardFocus'](arg1);
+}
+
+export function SetMicTest(arg1) {
+  return window['go']['app']['App']['SetMicTest'](arg1);
 }
 
 export function SetMouseCaptured(arg1) {

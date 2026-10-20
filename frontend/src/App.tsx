@@ -1,19 +1,19 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react'
-import {Bubble} from './components/Bubble'
+import {Bubble, type BubbleContent} from './components/Bubble'
 import {ChatPanel, type Message} from './components/ChatPanel'
 import {Orb} from './components/Orb'
 import {SettingsPanel} from './components/settings/SettingsPanel'
 import {useDrag} from './hooks/useDrag'
 import {useSettings} from './hooks/useSettings'
 import * as bridge from './lib/bridge'
-import type {Point} from './lib/bridge'
+import type {Point, VoiceState} from './lib/bridge'
 import {ORB_SIZES, shortcutLabel} from './lib/settings'
 import {startRegionTracking} from './overlay/regions'
 
 const MARGIN = 16
 const GAP = 14
 const PANEL = {w: 352, h: 480} // w-[22rem] h-[30rem]
-const BUBBLE_W = 288 // w-72
+const BUBBLE_W = 320 // w-80
 const BUBBLE_LINGER_MS = 3500
 
 const clamp = (p: Point, size: number): Point => ({
@@ -57,7 +57,9 @@ export default function App() {
   const [seeScreen, setSeeScreen] = useState(true)
   const [aiReady, setAiReady] = useState(false)
   const [envDebug, setEnvDebug] = useState(false)
-  const [bubble, setBubble] = useState<{text: string; key: number} | null>(null)
+  const [bubble, setBubble] = useState<(BubbleContent & {key: number}) | null>(null)
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle')
+  const [partial, setPartial] = useState('')
 
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
@@ -123,17 +125,74 @@ export default function App() {
     () =>
       bridge.onSay((text) => {
         setMessages((m) => [...m, {id: `say-${nextId++}`, from: 'aria', text, at: new Date()}])
-        if (!chatOpenRef.current && showBubblesRef.current) setBubble({text, key: nextId++})
+        if (!chatOpenRef.current && showBubblesRef.current) setBubble({kind: 'say', text, key: nextId++})
       }),
     [],
   )
   useEffect(() => bridge.onSpeaking(setSpeaking), [])
+
+  // ---- Voice -----------------------------------------------------------------
+  const bubbleOn = () => !chatOpenRef.current && showBubblesRef.current
+
+  useEffect(
+    () =>
+      bridge.onVoiceState((st) => {
+        setVoiceState(st)
+        if (st === 'listening') {
+          setPartial('')
+          if (bubbleOn()) setBubble({kind: 'listen', text: '', transcribing: false, key: nextId++})
+        } else if (st === 'transcribing') {
+          setBubble((b) => (b?.kind === 'listen' ? {...b, transcribing: true} : b))
+        } else {
+          // Idle without a turn (nothing heard, no wake phrase): drop the
+          // listening bubble; a turn replaces it with the answer.
+          setBubble((b) => (b?.kind === 'listen' ? null : b))
+        }
+      }),
+    [],
+  )
+  useEffect(
+    () =>
+      bridge.onVoicePartial((text) => {
+        setPartial(text)
+        setBubble((b) => (b?.kind === 'listen' ? {...b, text} : b))
+      }),
+    [],
+  )
+  useEffect(
+    () =>
+      bridge.onVoiceTurn(({text, turn}) => {
+        setPartial('')
+        setMessages((m) => [...m, {id: `user-${nextId++}`, from: 'user', text, at: new Date(), image: turn.capture, voice: true}])
+        setWaiting(true)
+        if (bubbleOn()) setBubble({kind: 'answer', turnId: turn.id, question: text, text: '', done: false, key: nextId++})
+      }),
+    [],
+  )
+  useEffect(
+    () =>
+      bridge.onVoiceError((message) => {
+        setPartial('')
+        setMessages((m) => [...m, {id: `err-${nextId++}`, from: 'aria', text: message, at: new Date(), error: true}])
+        if (bubbleOn()) setBubble({kind: 'error', text: message, key: nextId++})
+      }),
+    [],
+  )
+  // The mic level drives a CSS variable directly: no React render at 20 Hz.
+  useEffect(
+    () =>
+      bridge.onVoiceLevel((level) => {
+        anchor.current?.style.setProperty('--level', level.toFixed(3))
+      }),
+    [],
+  )
 
   // Streamed answers: one message per turn, created by its first delta.
   useEffect(
     () =>
       bridge.onDelta(({id, text}) => {
         setWaiting(false)
+        setBubble((b) => (b?.kind === 'answer' && b.turnId === id ? {...b, text: b.text + text} : b))
         setMessages((m) => {
           const key = `turn-${id}`
           const i = m.findIndex((x) => x.id === key)
@@ -148,6 +207,11 @@ export default function App() {
   useEffect(
     () =>
       bridge.onDone(({id, error, interrupted}) => {
+        setBubble((b) => {
+          if (b?.kind !== 'answer' || b.turnId !== id) return b
+          if (error) return {kind: 'error', text: error, key: b.key}
+          return {...b, done: true, text: b.text + (interrupted ? '…' : '')}
+        })
         setMessages((m) => {
           const key = `turn-${id}`
           const i = m.findIndex((x) => x.id === key)
@@ -165,12 +229,15 @@ export default function App() {
     [],
   )
 
-  // The bubble lingers a little once A.R.I.A stops talking.
+  // The bubble lingers a little once A.R.I.A stops talking (longer for an
+  // answer, to finish reading it).
+  const bubbleBusy = bubble?.kind === 'listen' || (bubble?.kind === 'answer' && !bubble.done)
   useEffect(() => {
-    if (!bubble || speaking) return
-    const id = setTimeout(() => setBubble(null), BUBBLE_LINGER_MS)
+    if (!bubble || speaking || bubbleBusy) return
+    const ms = bubble.kind === 'answer' ? BUBBLE_LINGER_MS + bubble.text.length * 40 : BUBBLE_LINGER_MS
+    const id = setTimeout(() => setBubble(null), ms)
     return () => clearTimeout(id)
-  }, [bubble, speaking])
+  }, [bubble, speaking, bubbleBusy])
 
   // Keyboard focus while the chat or the settings are open, handed back to
   // the previous app afterwards. Compares with the last notified value:
@@ -232,7 +299,7 @@ export default function App() {
   return (
     <main className="pointer-events-none fixed inset-0" hidden={!visible}>
       <div ref={anchor} className="pointer-events-auto absolute top-0 left-0 will-change-transform">
-        <Orb size={size} open={chatOpen} speaking={speaking} handlers={drag} />
+        <Orb size={size} open={chatOpen} speaking={speaking} listening={voiceState === 'listening'} handlers={drag} />
 
         <div className="absolute" style={place.panel}>
           <ChatPanel
@@ -241,10 +308,13 @@ export default function App() {
             waiting={waiting}
             aiReady={aiReady}
             seeScreen={seeScreen}
+            listening={voiceState}
+            partial={partial}
             messages={messages}
             onSend={send}
             onToggleScreen={() => setSeeScreen((v) => !v)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onStop={bridge.interrupt}
             onClose={() => setChatOpen(false)}
             toggleLabel={shortcutLabel(settings.hotkeys.toggleChat)}
           />
@@ -252,7 +322,7 @@ export default function App() {
 
         {bubble && !chatOpen && (
           <div className="absolute top-1/2 -translate-y-1/2" style={{left: place.bubbleLeft}}>
-            <Bubble key={bubble.key} text={bubble.text} speaking={speaking} side={place.side} />
+            <Bubble key={bubble.key} content={bubble} speaking={speaking} side={place.side} />
           </div>
         )}
       </div>

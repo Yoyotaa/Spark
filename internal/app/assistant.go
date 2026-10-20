@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"spark/internal/ai"
 	"spark/internal/vision"
 )
@@ -53,12 +51,40 @@ type Done struct {
 // withScreen is set. A new question interrupts the previous answer (text and
 // voice). It returns once the request is accepted; the answer streams through
 // EventDelta / EventDone.
-func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
+func (a *App) Ask(text string, withScreen bool) (Turn, error) {
+	return a.ask(text, withScreen, nil, nil)
+}
+
+// interrupt stops the current answer (request and voice) and waits for it,
+// so the history keeps a strict user/model alternation. Caller holds askMu.
+func (a *App) interruptLocked() {
+	if a.askCancel != nil {
+		a.askCancel()
+		<-a.askDone
+		a.askCancel = nil
+	}
+}
+
+// Interrupt stops A.R.I.A (answer being generated or spoken).
+func (a *App) Interrupt() {
+	a.askMu.Lock()
+	a.interruptLocked()
+	a.askMu.Unlock()
+}
+
+// ask is Ask with an optional screenshot already taken (voice questions
+// capture the screen when the user starts speaking). It takes ownership of
+// frame.
+func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Capture) (turn Turn, err error) {
 	defer func() {
 		if err != nil {
 			a.debugf("ai: question refusée : %v", err)
 		}
 	}()
+	// Safe once ask returns: the provider has serialized the image when
+	// Stream returns, and the frame is not kept.
+	defer func() { frame.Release() }()
+
 	a.mu.RLock()
 	llm, llmErr, cfg := a.llm, a.llmErr, a.cfg
 	a.mu.RUnlock()
@@ -70,7 +96,7 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		if !withScreen {
+		if !withScreen && frame == nil {
 			return Turn{}, errors.New("question vide")
 		}
 		text = defaultQuestion[cfg.AI.Language]
@@ -78,25 +104,17 @@ func (a *App) Ask(text string, withScreen bool) (turn Turn, err error) {
 
 	a.askMu.Lock()
 	defer a.askMu.Unlock()
-	// Interrupt and wait for the previous answer so the history keeps a
-	// strict user/model alternation.
-	if a.askCancel != nil {
-		a.askCancel()
-		<-a.askDone
-	}
+	a.interruptLocked()
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.askID++
-	turn = Turn{ID: a.askID}
+	turn = Turn{ID: a.askID, Capture: capt}
 
-	var frame *vision.Frame
-	if withScreen {
+	if frame == nil && withScreen {
 		frame, turn.Capture, err = a.capture(ctx)
 		if err != nil {
 			cancel()
 			return Turn{}, err
 		}
-		// Safe: the provider has serialized the image when Stream returns.
-		defer frame.Release()
 	}
 
 	// Past exchanges sent as context: text only, screenshots are never kept
@@ -163,7 +181,7 @@ func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan s
 			a.debugf("ai: first token after %v", time.Since(start))
 		}
 		full.WriteString(c.Text)
-		runtime.EventsEmit(a.ctx, EventDelta, Delta{ID: id, Text: c.Text})
+		a.emit(EventDelta, Delta{ID: id, Text: c.Text})
 		for _, s := range splitter.Push(c.Text) {
 			if readAloud {
 				sentences <- s
@@ -179,7 +197,7 @@ func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan s
 	if streamErr != nil && !d.Interrupted {
 		d.Error = streamErr.Error()
 	}
-	runtime.EventsEmit(a.ctx, EventDone, d)
+	a.emit(EventDone, d)
 	a.debugf("ai: answer %d done in %v (%d chars)", id, time.Since(start), full.Len())
 
 	reply := full.String()

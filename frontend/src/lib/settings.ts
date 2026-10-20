@@ -19,7 +19,14 @@ export type Settings = {
   }
   vision: {enabled: boolean; maxSide: number; quality: number; showCursor: boolean}
   voice: {enabled: boolean; voice: string; rate: number; readAnswers: boolean; greeting: boolean}
-  mic: {mode: 'off' | 'ptt' | 'continuous'; pushToTalk: Shortcut; sensitivity: number}
+  mic: {
+    mode: 'off' | 'ptt' | 'continuous'
+    pushToTalk: Shortcut
+    sensitivity: number
+    wakeWord: boolean
+    wakePhrase: string
+    cues: boolean
+  }
   hotkeys: {toggleChat: Shortcut; toggleVisible: Shortcut; openSettings: Shortcut}
   appearance: {
     accent: Accent
@@ -55,7 +62,7 @@ export const DEFAULTS: Settings = {
   },
   vision: {enabled: true, maxSide: 1568, quality: 72, showCursor: true},
   voice: {enabled: true, voice: '', rate: 1, readAnswers: true, greeting: true},
-  mic: {mode: 'ptt', pushToTalk: sc('F8'), sensitivity: 50},
+  mic: {mode: 'ptt', pushToTalk: sc('F8'), sensitivity: 50, wakeWord: true, wakePhrase: 'Aria', cues: true},
   hotkeys: {
     toggleChat: sc('A', {alt: true, shift: true}),
     toggleVisible: sc('H', {alt: true, shift: true}),

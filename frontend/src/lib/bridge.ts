@@ -15,6 +15,11 @@ const EventSay = 'aria:say'
 const EventSpeaking = 'aria:speaking'
 const EventDelta = 'aria:delta'
 const EventDone = 'aria:done'
+const EventVoiceState = 'voice:state'
+const EventVoiceLevel = 'voice:level'
+const EventVoicePartial = 'voice:partial'
+const EventVoiceTurn = 'voice:turn'
+const EventVoiceError = 'voice:error'
 
 export type Region = Pick<overlay.Rect, 'x' | 'y' | 'w' | 'h'>
 export type Point = {x: number; y: number}
@@ -194,3 +199,43 @@ export const onDelta = (cb: (d: Delta) => void) => on(EventDelta, cb)
 export const onDone = (cb: (d: Done) => void) => on(EventDone, cb)
 /** A.R.I.A's voice starts or stops. */
 export const onSpeaking = (cb: (speaking: boolean) => void) => on(EventSpeaking, cb)
+
+// ---- Voice -----------------------------------------------------------------
+
+export type VoiceState = 'idle' | 'listening' | 'transcribing'
+export type VoiceTurn = {text: string; turn: Turn}
+export type MicStatus = {mic: 'unknown' | 'denied' | 'granted'; speech: 'unknown' | 'denied' | 'granted'; engine: string; live: boolean}
+
+export const onVoiceState = (cb: (s: VoiceState) => void) => on(EventVoiceState, cb)
+/** Microphone level 0-1, ~20 Hz while the mic is open. */
+export const onVoiceLevel = (cb: (level: number) => void) => on(EventVoiceLevel, cb)
+/** Live transcription of the current utterance. */
+export const onVoicePartial = (cb: (text: string) => void) => on(EventVoicePartial, cb)
+/** A spoken question was sent to the AI. */
+export const onVoiceTurn = (cb: (t: VoiceTurn) => void) => on(EventVoiceTurn, cb)
+export const onVoiceError = (cb: (message: string) => void) => on(EventVoiceError, cb)
+
+export async function getMicStatus(): Promise<MicStatus> {
+  if (inWails) return (await App.GetMicStatus()) as MicStatus
+  return {mic: 'granted', speech: 'granted', engine: 'Aperçu navigateur', live: true}
+}
+
+/** Shows the OS permission dialogs; resolves with the new status. */
+export async function requestMicPermission(): Promise<MicStatus> {
+  if (inWails) return (await App.RequestMicPermission()) as MicStatus
+  return getMicStatus()
+}
+
+let fakeMeter = 0
+
+/** Opens the mic for the settings level meter. */
+export async function setMicTest(on: boolean): Promise<void> {
+  if (inWails) return App.SetMicTest(on)
+  clearInterval(fakeMeter)
+  if (on) fakeMeter = window.setInterval(() => emitLocal(EventVoiceLevel, Math.abs(Math.sin(Date.now() / 300)) * 0.7), 50)
+}
+
+/** Stops A.R.I.A: answer being generated or spoken. */
+export function interrupt(): void {
+  if (inWails) void App.Interrupt()
+}

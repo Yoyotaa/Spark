@@ -40,15 +40,19 @@ var functionKeyCodes = [13]uint32{0, 0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0
 
 var (
 	mu       sync.Mutex
-	handlers        = map[uint32]func(){}
+	handlers        = map[uint32]Binding{}
 	nextID   uint32 = 1
 )
 
 //export sparkHotkeyFired
-func sparkHotkeyFired(id C.uint32_t) {
+func sparkHotkeyFired(id C.uint32_t, released C.int) {
 	mu.Lock()
-	fn := handlers[uint32(id)]
+	b := handlers[uint32(id)]
 	mu.Unlock()
+	fn := b.Fn
+	if released != 0 {
+		fn = b.Release
+	}
 	if fn != nil {
 		// Runs on the AppKit main thread: hand off immediately, callbacks
 		// may dispatch_sync back to the main queue.
@@ -146,7 +150,7 @@ func register(bindings []Binding) (*Listener, error) {
 			return nil, fmt.Errorf("%s est déjà utilisé par une autre application", b)
 		}
 		ids = append(ids, id)
-		handlers[id] = b.Fn
+		handlers[id] = b
 	}
 	return &Listener{close: func() {
 		mu.Lock()

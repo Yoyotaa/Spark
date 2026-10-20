@@ -12,6 +12,7 @@ export type Message = {
   image?: Capture
   streaming?: boolean
   error?: boolean
+  voice?: boolean // spoken question
 }
 
 type Props = {
@@ -20,10 +21,13 @@ type Props = {
   waiting: boolean
   aiReady: boolean
   seeScreen: boolean
+  listening: 'idle' | 'listening' | 'transcribing'
+  partial: string
   messages: Message[]
   onSend: (text: string) => void
   onToggleScreen: () => void
   onOpenSettings: () => void
+  onStop: () => void
   onClose: () => void
   toggleLabel: string
 }
@@ -67,10 +71,13 @@ export function ChatPanel({
   waiting,
   aiReady,
   seeScreen,
+  listening,
+  partial,
   messages,
   onSend,
   onToggleScreen,
   onOpenSettings,
+  onStop,
   onClose,
   toggleLabel,
 }: Props) {
@@ -86,7 +93,7 @@ export function ChatPanel({
   const last = messages[messages.length - 1]
   useEffect(() => {
     list.current?.scrollTo({top: list.current.scrollHeight})
-  }, [messages.length, last?.text, waiting, open])
+  }, [messages.length, last?.text, waiting, open, partial, listening])
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -114,6 +121,16 @@ export function ChatPanel({
             {speaking ? 'PARLE' : waiting ? 'ANALYSE' : 'EN LIGNE'}
           </div>
         </div>
+        {(speaking || waiting) && (
+          <button
+            onClick={onStop}
+            title="Arrêter A.R.I.A"
+            className="flex items-center gap-1.5 rounded-md border border-white/10 px-2 py-0.5 font-mono text-[9.5px] tracking-[0.15em] text-slate-300 transition-colors hover:border-rose-400/40 hover:text-rose-200"
+          >
+            <span className="size-1.5 rounded-[1px] bg-current" />
+            STOP
+          </button>
+        )}
         <kbd className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400">{toggleLabel}</kbd>
         <button
           onClick={onOpenSettings}
@@ -161,12 +178,29 @@ export function ChatPanel({
               {m.image && <Thumbnail capture={m.image} />}
               {m.text && (
                 <p className="max-w-[85%] rounded-xl rounded-br-sm border border-white/[0.07] bg-gradient-to-br from-spark-cyan/[0.14] to-spark-violet/[0.14] px-3 py-2 text-[13.5px] leading-relaxed">
+                  {m.voice && (
+                    <svg viewBox="0 0 20 20" className="mr-1.5 inline size-3 -translate-y-px text-spark-cyan" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-label="Message vocal">
+                      <rect x="7.5" y="2.5" width="5" height="9" rx="2.5" />
+                      <path d="M4.5 9.5a5.5 5.5 0 0011 0M10 15v2.5" />
+                    </svg>
+                  )}
                   {m.text}
                 </p>
               )}
               <span className="font-mono text-[9px] tracking-[0.18em] text-slate-500">{time(m.at)}</span>
             </li>
           ),
+        )}
+        {listening !== 'idle' && (
+          <li className="flex flex-col items-end gap-1">
+            <p className="max-w-[85%] rounded-xl rounded-br-sm border border-dashed border-spark-cyan/40 px-3 py-2 text-[13.5px] leading-relaxed text-slate-300">
+              {partial || <span className="text-slate-500">J’écoute…</span>}
+            </p>
+            <span className="flex items-center gap-1.5 font-mono text-[9px] tracking-[0.2em] text-spark-cyan/80">
+              <Waveform active />
+              {listening === 'listening' ? 'ÉCOUTE' : 'TRANSCRIPTION'}
+            </span>
+          </li>
         )}
         {waiting && (
           <li className="relative flex items-center gap-2 pl-3.5 font-mono text-[9.5px] tracking-[0.25em] text-spark-cyan/80">

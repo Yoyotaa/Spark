@@ -179,3 +179,24 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("en prompt: %s", en)
 	}
 }
+
+func TestGeminiTranscriber(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/models/"+transcribeModel+":generateContent") {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"« Que dois-je faire ? »"}]}}]}`)
+	}))
+	defer srv.Close()
+
+	text, err := NewGeminiTranscriber("k", srv.URL).Transcribe(context.Background(), []byte("RIFF"), "fr")
+	if err != nil || text != "Que dois-je faire ?" {
+		t.Fatalf("got %q, %v", text, err)
+	}
+	part := body["contents"].([]any)[0].(map[string]any)["parts"].([]any)[0].(map[string]any)
+	if part["inline_data"].(map[string]any)["mime_type"] != "audio/wav" {
+		t.Fatalf("audio not sent: %v", part)
+	}
+}

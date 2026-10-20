@@ -17,13 +17,19 @@ export function GetAIStatus():Promise<app.AIStatus>;
 
 export function GetAppInfo():Promise<app.AppInfo>;
 
+export function GetMicStatus():Promise<app.MicStatus>;
+
 export function GetSettings():Promise<config.Settings>;
+
+export function Interrupt():Promise<void>;
 
 export function KeyLabel(arg1:string):Promise<string>;
 
 export function ListModels(arg1:string):Promise<Array<string>>;
 
 export function ListVoices():Promise<Array<audio.Voice>>;
+
+export function RequestMicPermission():Promise<app.MicStatus>;
 
 export function ResetSettings():Promise<app.SaveResult>;
 
@@ -34,6 +40,8 @@ export function SetAPIKey(arg1:string,arg2:string):Promise<app.AIStatus>;
 export function SetInteractiveRegions(arg1:Array<overlay.Rect>):Promise<void>;
 
 export function SetKeyboardFocus(arg1:boolean):Promise<void>;
+
+export function SetMicTest(arg1:boolean):Promise<void>;
 
 export function SetMouseCaptured(arg1:boolean):Promise<void>;
 

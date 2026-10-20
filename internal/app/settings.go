@@ -221,3 +221,46 @@ func (a *App) KeyLabel(code string) string {
 	k, _ := hotkey.LetterForCode(code)
 	return string(k)
 }
+
+// MicStatus describes the voice input for the settings page.
+type MicStatus struct {
+	Mic    string `json:"mic"`    // "unknown" | "denied" | "granted"
+	Speech string `json:"speech"` // speech recognition permission
+	Engine string `json:"engine"` // who transcribes
+	Live   bool   `json:"live"`   // live partial transcription
+}
+
+func (a *App) GetMicStatus() MicStatus {
+	st := MicStatus{
+		Mic:    audio.MicPermission().String(),
+		Speech: audio.SpeechPermission().String(),
+		Live:   a.voice.in.Live(),
+	}
+	if st.Live {
+		st.Engine = "Reconnaissance vocale d’Apple, sur l’appareil quand c’est possible"
+	} else {
+		st.Engine = "Gemini (nécessite une clé Gemini)"
+	}
+	return st
+}
+
+// RequestMicPermission shows the OS permission dialogs and waits for the
+// answer (or a timeout).
+func (a *App) RequestMicPermission() MicStatus {
+	done := make(chan struct{})
+	audio.RequestPermissions(func(bool) { close(done) })
+	select {
+	case <-done:
+	case <-time.After(2 * time.Minute):
+	}
+	a.mu.RLock()
+	mic, lang := a.cfg.Mic, a.cfg.AI.Language
+	a.mu.RUnlock()
+	a.voice.configure(mic, lang)
+	return a.GetMicStatus()
+}
+
+// SetMicTest opens the mic for the settings level meter (EventVoiceLevel).
+func (a *App) SetMicTest(on bool) error {
+	return a.voice.setTesting(on)
+}

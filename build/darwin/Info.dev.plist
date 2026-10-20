@@ -19,6 +19,10 @@
         <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>
         <string>12.3.0</string>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Spark écoute ta voix quand tu parles à A.R.I.A (push-to-talk ou mot d'activation).</string>
+        <key>NSSpeechRecognitionUsageDescription</key>
+        <string>Spark transcrit ce que tu dis à A.R.I.A, directement sur ton Mac quand c'est possible.</string>
         <key>NSHighResolutionCapable</key>
         <string>true</string>
         <key>NSHumanReadableCopyright</key>

@@ -1,6 +1,6 @@
-import {useEffect, useId, useState} from 'react'
+import {useEffect, useId, useRef, useState} from 'react'
 import * as bridge from '../../lib/bridge'
-import type {AIStatus, AppInfo, TestResult, Voice} from '../../lib/bridge'
+import type {AIStatus, AppInfo, MicStatus, TestResult, Voice} from '../../lib/bridge'
 import {ACCENTS, DEFAULT_MODELS, MODEL_HINTS, type Accent, type Provider, type Settings} from '../../lib/settings'
 import {Badge, Button, Group, inputClass, Row, Segmented, Select, SecretField, ShortcutRecorder, Slider, Toggle} from './controls'
 
@@ -359,15 +359,107 @@ export function VoiceSection({s, update}: SectionProps) {
 
 // ---- Micro -----------------------------------------------------------------------
 
+function MicMeter({sensitivity, continuous}: {sensitivity: number; continuous: boolean}) {
+  const bar = useRef<HTMLDivElement>(null)
+  const [on, setOn] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!on) return
+    // Level events update the bar directly (no React render at 20 Hz).
+    const off = bridge.onVoiceLevel((l) => {
+      if (bar.current) bar.current.style.width = `${Math.round(l * 100)}%`
+    })
+    return () => {
+      off()
+      void bridge.setMicTest(false)
+    }
+  }, [on])
+
+  async function toggle() {
+    setError(null)
+    if (on) return setOn(false)
+    try {
+      await bridge.setMicTest(true)
+      setOn(true)
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  // Same mapping as voice.threshold() in Go, on the 0-1 scale of the meter.
+  const threshold = Math.min(1, (0.004 + 0.05 * (1 - sensitivity / 100)) * 8)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <Button variant={on ? 'danger' : 'primary'} onClick={toggle}>
+          {on ? 'Arrêter' : 'Tester le micro'}
+        </Button>
+        <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+          <div ref={bar} className="h-full w-0 rounded-full bg-gradient-to-r from-spark-teal to-spark-cyan transition-[width] duration-75" />
+          {continuous && (
+            <span
+              className="absolute top-[-3px] bottom-[-3px] w-[2px] rounded bg-amber-300"
+              style={{left: `${threshold * 100}%`}}
+              title="Seuil de détection de la voix"
+            />
+          )}
+        </div>
+      </div>
+      {continuous && on && <div className="text-[11px] text-slate-500">Le repère jaune est le seuil : ta voix doit le dépasser, le bruit de fond non.</div>}
+      {error && <div className="text-[11.5px] text-rose-200">{error}</div>}
+    </div>
+  )
+}
+
 export function MicSection({s, update}: SectionProps) {
+  const [status, setStatus] = useState<MicStatus | null>(null)
+  const [asking, setAsking] = useState(false)
+  useEffect(() => {
+    void bridge.getMicStatus().then(setStatus)
+  }, [])
+
+  const granted = status?.mic === 'granted' && status?.speech === 'granted'
+  const denied = status?.mic === 'denied' || status?.speech === 'denied'
+  const ptt = s.mic.mode === 'ptt'
+  const continuous = s.mic.mode === 'continuous'
+
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-spark-violet/30 bg-spark-violet/[0.07] px-4 py-3 text-[12px] leading-relaxed text-slate-300">
-        <span className="font-medium text-spark-violet">Prochaine étape.</span> Le micro n’est pas encore branché : ces réglages sont
-        enregistrés et seront utilisés dès son arrivée.
+      <div
+        className={`flex items-center justify-between gap-4 rounded-xl border px-4 py-3 text-[12px] ${
+          granted ? 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200' : 'border-amber-400/20 bg-amber-400/[0.06] text-amber-100'
+        }`}
+      >
+        <span className="flex items-center gap-2.5">
+          <span className={`size-2 rounded-full ${granted ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-amber-300'}`} />
+          {granted
+            ? 'Micro et reconnaissance vocale autorisés.'
+            : denied
+              ? 'Accès refusé : autorise Spark dans Réglages Système › Confidentialité › Micro et Reconnaissance vocale.'
+              : 'Spark a besoin du micro et de la reconnaissance vocale.'}
+        </span>
+        {!granted && !denied && (
+          <Button
+            variant="primary"
+            busy={asking}
+            onClick={async () => {
+              setAsking(true)
+              try {
+                setStatus(await bridge.requestMicPermission())
+              } finally {
+                setAsking(false)
+              }
+            }}
+          >
+            Autoriser
+          </Button>
+        )}
       </div>
-      <Group title="Parler à A.R.I.A" badge={<Badge tone="soon">BIENTÔT</Badge>}>
-        <Row label="Mode d’écoute" help="Push-to-talk : maintiens la touche pour parler. Continu : A.R.I.A détecte ta voix toute seule.">
+
+      <Group title="Parler à A.R.I.A">
+        <Row label="Mode d’écoute" help="Push-to-talk : maintiens la touche, parle, relâche. Continu : A.R.I.A détecte ta voix toute seule.">
           <Segmented
             value={s.mic.mode}
             options={[
@@ -378,11 +470,50 @@ export function MicSection({s, update}: SectionProps) {
             onChange={(v) => update((d) => void (d.mic.mode = v))}
           />
         </Row>
-        <Row label="Touche push-to-talk" help="Une touche F seule est idéale en jeu." disabled={s.mic.mode !== 'ptt'}>
+        <Row
+          label="Touche push-to-talk"
+          help="Une touche F seule est idéale en jeu. La capture d’écran est prise à l’appui ; appuyer coupe aussi A.R.I.A si elle parle."
+          disabled={!ptt}
+        >
           <ShortcutRecorder value={s.mic.pushToTalk} requireModifier={false} onChange={(v) => update((d) => void (d.mic.pushToTalk = v))} />
         </Row>
-        <Row label="Sensibilité" help="Plus haut = A.R.I.A se déclenche sur une voix plus faible." disabled={s.mic.mode !== 'continuous'}>
+        <Row label="Sons de retour" help="Un léger son quand l’écoute commence et s’arrête." disabled={s.mic.mode === 'off'}>
+          <Toggle label="Sons" checked={s.mic.cues} onChange={(v) => update((d) => void (d.mic.cues = v))} />
+        </Row>
+      </Group>
+
+      <Group title="Écoute continue">
+        <Row
+          label="Mot d’activation"
+          help="A.R.I.A ne répond qu’aux phrases qui commencent par ce mot : « Aria, que dois-je faire ? ». Sans lui, toute parole est envoyée."
+          disabled={!continuous}
+        >
+          <Toggle label="Mot d’activation" checked={s.mic.wakeWord} onChange={(v) => update((d) => void (d.mic.wakeWord = v))} />
+        </Row>
+        <Row label="Mot" disabled={!continuous || !s.mic.wakeWord}>
+          <input
+            key={s.mic.wakePhrase}
+            defaultValue={s.mic.wakePhrase}
+            maxLength={40}
+            onBlur={(e) => {
+              const v = e.target.value.trim()
+              if (v) update((d) => void (d.mic.wakePhrase = v))
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className={`${inputClass} w-44`}
+          />
+        </Row>
+        <Row label="Sensibilité" help="Plus haut = A.R.I.A se déclenche sur une voix plus faible (et sur plus de bruit)." disabled={!continuous}>
           <Slider label="Sensibilité" value={s.mic.sensitivity} min={0} max={100} onChange={(v) => update((d) => void (d.mic.sensitivity = v))} format={(v) => `${v} %`} />
+        </Row>
+      </Group>
+
+      <Group title="Test et reconnaissance">
+        <Row label="Niveau du micro" stacked>
+          <MicMeter sensitivity={s.mic.sensitivity} continuous={continuous} />
+        </Row>
+        <Row label="Reconnaissance vocale" help={status?.live ? 'Transcription en direct, ta voix ne quitte pas l’ordinateur quand le modèle local est disponible.' : 'L’enregistrement est transcrit à la fin de la phrase.'}>
+          <span className="max-w-64 text-right text-[12px] text-slate-300">{status?.engine ?? '…'}</span>
         </Row>
       </Group>
     </div>

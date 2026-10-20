@@ -13,7 +13,7 @@ static OSStatus onHotkey(EventHandlerCallRef next, EventRef event, void *data) {
 	EventHotKeyID hk;
 	GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, NULL,
 	                  sizeof(hk), NULL, &hk);
-	sparkHotkeyFired(hk.id);
+	sparkHotkeyFired(hk.id, GetEventKind(event) == kEventHotKeyReleased ? 1 : 0);
 	return noErr;
 }
 
@@ -92,8 +92,11 @@ int sparkRegisterHotkey(uint32_t id, uint32_t keyCode, uint32_t modifiers) {
 	__block OSStatus status = noErr;
 	onMain(^{
 		if (!handlerInstalled) {
-			EventTypeSpec spec = {kEventClassKeyboard, kEventHotKeyPressed};
-			InstallApplicationEventHandler(&onHotkey, 1, &spec, NULL, NULL);
+			EventTypeSpec specs[] = {
+				{kEventClassKeyboard, kEventHotKeyPressed},
+				{kEventClassKeyboard, kEventHotKeyReleased},
+			};
+			InstallApplicationEventHandler(&onHotkey, 2, specs, NULL, NULL);
 			handlerInstalled = YES;
 		}
 		EventHotKeyID hk = {'SPRK', id};

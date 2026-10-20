@@ -5,6 +5,7 @@ type Props = {
   size: number
   open: boolean
   speaking: boolean
+  listening: boolean
   handlers: {
     onPointerDown: (e: PointerEvent<HTMLElement>) => void
     onPointerMove: (e: PointerEvent<HTMLElement>) => void
@@ -17,8 +18,8 @@ type Props = {
  * A.R.I.A's button. Idle, nothing animates (zero GPU work while you play);
  * the ring only spins while she speaks or the chat is open.
  */
-export function Orb({size, open, speaking, handlers}: Props) {
-  const active = open || speaking
+export function Orb({size, open, speaking, listening, handlers}: Props) {
+  const active = open || speaking || listening
   const star = Math.round(size / 2)
   return (
     <button
@@ -38,6 +39,18 @@ export function Orb({size, open, speaking, handlers}: Props) {
           <>
             <span className="absolute inset-0 animate-halo rounded-full border border-spark-cyan/70" />
             <span className="absolute inset-0 animate-halo rounded-full border border-spark-violet/60 [animation-delay:0.9s]" />
+          </>
+        )}
+
+        {/* listening: a ring that follows the voice level (--level, set by
+            the parent at ~20 Hz without re-rendering) */}
+        {listening && (
+          <>
+            <span
+              className="absolute inset-[-6%] rounded-full border-2 border-spark-cyan/80 shadow-[0_0_24px_var(--color-spark-cyan)] transition-transform duration-75"
+              style={{transform: 'scale(calc(1 + var(--level, 0) * 0.45))'}}
+            />
+            <span className="absolute inset-[-6%] animate-ping rounded-full border border-spark-cyan/40 [animation-duration:1.6s]" />
           </>
         )}
 

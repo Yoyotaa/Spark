@@ -89,6 +89,24 @@ export namespace app {
 	    }
 	}
 	
+	export class MicStatus {
+	    mic: string;
+	    speech: string;
+	    engine: string;
+	    live: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MicStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mic = source["mic"];
+	        this.speech = source["speech"];
+	        this.engine = source["engine"];
+	        this.live = source["live"];
+	    }
+	}
 	export class SaveResult {
 	    settings: config.Settings;
 	    hotkeyError?: string;
@@ -313,6 +331,9 @@ export namespace config {
 	    mode: string;
 	    pushToTalk: Shortcut;
 	    sensitivity: number;
+	    wakeWord: boolean;
+	    wakePhrase: string;
+	    cues: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new MicSettings(source);
@@ -323,6 +344,9 @@ export namespace config {
 	        this.mode = source["mode"];
 	        this.pushToTalk = this.convertValues(source["pushToTalk"], Shortcut);
 	        this.sensitivity = source["sensitivity"];
+	        this.wakeWord = source["wakeWord"];
+	        this.wakePhrase = source["wakePhrase"];
+	        this.cues = source["cues"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -39,6 +39,7 @@ type App struct {
 	vision   *vision.Service
 	tts      *audio.SystemTTS
 	speakMu  sync.Mutex // one voice at a time
+	voice    *voice
 	visible  atomic.Bool
 	debug    atomic.Bool
 	boot     sync.Once
@@ -61,6 +62,18 @@ type App struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// emitFn replaces the Wails event bus in tests.
+	emitFn func(event string, data ...any)
+}
+
+// emit sends an event to the frontend.
+func (a *App) emit(event string, data ...any) {
+	if a.emitFn != nil {
+		a.emitFn(event, data...)
+		return
+	}
+	runtime.EventsEmit(a.ctx, event, data...)
 }
 
 func New(env config.Env, settings *config.Store) *App {
@@ -75,6 +88,7 @@ func (a *App) Startup(ctx context.Context) {
 	// Created here rather than in New: Wails also runs New when generating
 	// bindings, where listing the system voices is wasted work.
 	a.tts = audio.NewSystemTTS()
+	a.voice = newVoice(a)
 	a.apply(a.settings.Get(), true)
 }
 
@@ -84,7 +98,7 @@ func (a *App) DomReady(context.Context) {
 		log.Printf("overlay disabled: %v", err)
 	}
 	a.mu.Lock()
-	a.registerHotkeys(a.cfg.Hotkeys)
+	a.registerHotkeys()
 	a.mu.Unlock()
 }
 
@@ -117,9 +131,13 @@ func (a *App) apply(s config.Settings, first bool) {
 	if first || !aiEqual(s.AI, old.AI) {
 		a.rebuildLLM()
 	}
+	if first || s.Mic != old.Mic || s.AI.Language != old.AI.Language {
+		a.voice.configure(s.Mic, s.AI.Language)
+	}
 	// Hotkeys need the native window: DomReady registers the first ones.
-	if !first && s.Hotkeys != old.Hotkeys {
-		a.registerHotkeys(s.Hotkeys)
+	pttChanged := s.Mic.Mode != old.Mic.Mode || s.Mic.PushToTalk != old.Mic.PushToTalk
+	if !first && (s.Hotkeys != old.Hotkeys || pttChanged) {
+		a.registerHotkeys()
 	}
 }
 
@@ -159,10 +177,12 @@ func (a *App) newProvider(provider string) (ai.Provider, error) {
 	})
 }
 
-// registerHotkeys replaces the global shortcuts. Caller holds a.mu.
-func (a *App) registerHotkeys(h config.HotkeySettings) {
+// registerHotkeys replaces the global shortcuts, push-to-talk included.
+// Caller holds a.mu.
+func (a *App) registerHotkeys() {
 	a.hotkeys.Close()
 	a.hotkeys = nil
+	h := a.cfg.Hotkeys
 	var bindings []hotkey.Binding
 	for _, b := range []struct {
 		s  config.Shortcut
@@ -171,6 +191,12 @@ func (a *App) registerHotkeys(h config.HotkeySettings) {
 		if b.s.Key != "" {
 			bindings = append(bindings, hotkey.Binding{Mod: modifiers(b.s), Key: hotkey.Key(b.s.Key), Fn: b.fn})
 		}
+	}
+	if ptt := a.cfg.Mic.PushToTalk; a.cfg.Mic.Mode == config.MicPushToTalk && ptt.Key != "" {
+		bindings = append(bindings, hotkey.Binding{
+			Mod: modifiers(ptt), Key: hotkey.Key(ptt.Key),
+			Fn: a.voice.pressPTT, Release: a.voice.releasePTT,
+		})
 	}
 	a.hotkeys, a.hotkeyErr = hotkey.Register(bindings)
 	if a.hotkeyErr != nil {
@@ -218,7 +244,7 @@ func (a *App) greet() {
 
 // say shows text in the UI and speaks it.
 func (a *App) say(text string) {
-	runtime.EventsEmit(a.ctx, EventSay, text)
+	a.emit(EventSay, text)
 	sentences := make(chan string, 1)
 	sentences <- text
 	close(sentences)
@@ -243,14 +269,16 @@ func (a *App) speakAll(ctx context.Context, sentences <-chan string) {
 		}
 		if !started {
 			started = true
-			runtime.EventsEmit(a.ctx, EventSpeaking, true)
+			a.voice.setSpeaking(true)
+			a.emit(EventSpeaking, true)
 		}
 		if err := a.tts.Speak(ctx, spoken(s)); err != nil && ctx.Err() == nil {
 			log.Printf("tts: %v", err)
 		}
 	}
 	if started {
-		runtime.EventsEmit(a.ctx, EventSpeaking, false)
+		a.voice.setSpeaking(false)
+		a.emit(EventSpeaking, false)
 	}
 }
 
@@ -265,7 +293,7 @@ func (a *App) toggleChat() {
 	if !a.visible.Load() {
 		a.setVisible(true)
 	}
-	runtime.EventsEmit(a.ctx, EventToggleChat)
+	a.emit(EventToggleChat)
 }
 
 func (a *App) toggleVisible() {
@@ -278,13 +306,13 @@ func (a *App) openSettings() {
 	if !a.visible.Load() {
 		a.setVisible(true)
 	}
-	runtime.EventsEmit(a.ctx, EventOpenSettings)
+	a.emit(EventOpenSettings)
 }
 
 func (a *App) setVisible(v bool) {
 	a.visible.Store(v)
 	a.overlay.SetPaused(!v)
-	runtime.EventsEmit(a.ctx, EventVisibility, v)
+	a.emit(EventVisibility, v)
 }
 
 // SetInteractiveRegions is called by the frontend whenever the layout of its

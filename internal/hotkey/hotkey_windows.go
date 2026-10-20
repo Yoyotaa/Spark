@@ -5,6 +5,7 @@ package hotkey
 import (
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -29,7 +30,20 @@ var (
 	procGetMessageW        = user32.NewProc("GetMessageW")
 	procPeekMessageW       = user32.NewProc("PeekMessageW")
 	procPostThreadMessageW = user32.NewProc("PostThreadMessageW")
+	procGetAsyncKeyState   = user32.NewProc("GetAsyncKeyState")
 )
+
+// waitRelease polls the key until it is released: RegisterHotKey only
+// reports presses.
+func waitRelease(vk uintptr, release func()) {
+	for {
+		time.Sleep(15 * time.Millisecond)
+		if s, _, _ := procGetAsyncKeyState.Call(vk); s&0x8000 == 0 {
+			release()
+			return
+		}
+	}
+}
 
 type msg struct {
 	Hwnd     uintptr
@@ -114,7 +128,12 @@ func register(bindings []Binding) (*Listener, error) {
 			}
 			if m.Message == wmHotkey {
 				if id := int(m.WParam); id >= 1 && id <= len(bindings) {
-					go bindings[id-1].Fn()
+					b := bindings[id-1]
+					go b.Fn()
+					if b.Release != nil {
+						vk, _ := vkOf(b.Key)
+						go waitRelease(vk, b.Release)
+					}
 				}
 			}
 		}

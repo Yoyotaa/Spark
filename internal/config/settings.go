@@ -1,6 +1,9 @@
 package config
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // Settings are the user preferences persisted between launches. Every field
 // is editable from the settings page; API keys live in the OS keychain (see
@@ -69,6 +72,11 @@ type MicSettings struct {
 	Mode        string   `json:"mode"`
 	PushToTalk  Shortcut `json:"pushToTalk"`
 	Sensitivity int      `json:"sensitivity"` // 0-100, continuous mode
+	// WakeWord makes the continuous mode only react to sentences that start
+	// with WakePhrase ("Aria, que dois-je faire ?").
+	WakeWord   bool   `json:"wakeWord"`
+	WakePhrase string `json:"wakePhrase"`
+	Cues       bool   `json:"cues"` // short sounds when listening starts/stops
 }
 
 // Shortcut is a key plus modifiers. Key is "A"-"Z", "0"-"9", "F1"-"F12" or
@@ -127,6 +135,9 @@ func Defaults() Settings {
 			Mode:        MicPushToTalk,
 			PushToTalk:  Shortcut{Key: "F8"},
 			Sensitivity: 50,
+			WakeWord:    true,
+			WakePhrase:  "Aria",
+			Cues:        true,
 		},
 		Hotkeys: HotkeySettings{
 			ToggleChat:    Shortcut{Key: "A", Alt: true, Shift: true},
@@ -217,6 +228,10 @@ func (s Settings) Normalize() Settings {
 	s.Mic.Mode = oneOf(s.Mic.Mode, []string{MicOff, MicPushToTalk, MicContinuous}, d.Mic.Mode)
 	s.Mic.PushToTalk = s.Mic.PushToTalk.normalized()
 	s.Mic.Sensitivity = clamp(s.Mic.Sensitivity, 0, 100)
+	s.Mic.WakePhrase = strings.TrimSpace(s.Mic.WakePhrase)
+	if s.Mic.WakePhrase == "" || len(s.Mic.WakePhrase) > 40 {
+		s.Mic.WakePhrase = d.Mic.WakePhrase
+	}
 
 	s.Hotkeys.ToggleChat = s.Hotkeys.ToggleChat.normalized()
 	s.Hotkeys.ToggleVisible = s.Hotkeys.ToggleVisible.normalized()
