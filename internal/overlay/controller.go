@@ -41,6 +41,10 @@ type Controller struct {
 	// regions is swapped atomically by the frontend and read lock-free by
 	// the polling loop, so the hot path never allocates nor contends.
 	regions atomic.Pointer[[]Rect]
+	// OnToggle, if set before Start, is called from the polling goroutine
+	// each time click-through changes (debug logging).
+	OnToggle func(ignoring bool)
+
 	// captured forces the window to keep the mouse (e.g. chat opened with
 	// a hotkey), regardless of the cursor position.
 	captured atomic.Bool
@@ -111,6 +115,9 @@ func (c *Controller) loop(ctx context.Context) {
 		if want != ignoring {
 			c.native.setIgnoreMouse(want)
 			ignoring = want
+			if c.OnToggle != nil {
+				c.OnToggle(want)
+			}
 		}
 	}
 }

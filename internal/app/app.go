@@ -19,7 +19,11 @@ type App struct {
 }
 
 func New(cfg config.Config) *App {
-	return &App{cfg: cfg, overlay: overlay.NewController()}
+	ov := overlay.NewController()
+	if cfg.Debug {
+		ov.OnToggle = func(ignoring bool) { log.Printf("overlay: click-through=%v", ignoring) }
+	}
+	return &App{cfg: cfg, overlay: ov}
 }
 
 func (a *App) Startup(ctx context.Context) {
