@@ -2,18 +2,28 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <ImageIO/ImageIO.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
-#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <unistd.h>
 #include "capture_darwin.h"
 
-int sparkHasScreenAccess(void) { return CGPreflightScreenCaptureAccess() ? 1 : 0; }
+// Wails compiles for macOS 10.13: guard every newer API to keep the build
+// warning-free (the app itself requires 12.3, see Info.plist).
+int sparkHasScreenAccess(void) {
+	if (@available(macOS 10.15, *)) {
+		return CGPreflightScreenCaptureAccess() ? 1 : 0;
+	}
+	return 1;
+}
 
-void sparkRequestScreenAccess(void) { CGRequestScreenCaptureAccess(); }
+void sparkRequestScreenAccess(void) {
+	if (@available(macOS 10.15, *)) {
+		CGRequestScreenCaptureAccess();
+	}
+}
 
 static NSData *encodeJPEG(CGImageRef image, double quality) {
 	NSMutableData *out = [NSMutableData data];
 	CGImageDestinationRef dst = CGImageDestinationCreateWithData(
-		(__bridge CFMutableDataRef)out, (__bridge CFStringRef)UTTypeJPEG.identifier, 1, NULL);
+		(__bridge CFMutableDataRef)out, CFSTR("public.jpeg"), 1, NULL);
 	if (dst == NULL) {
 		return nil;
 	}

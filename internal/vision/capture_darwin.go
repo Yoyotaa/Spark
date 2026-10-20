@@ -4,7 +4,7 @@ package vision
 
 /*
 #cgo CFLAGS: -fobjc-arc
-#cgo LDFLAGS: -framework Foundation -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -framework ScreenCaptureKit
+#cgo LDFLAGS: -framework Foundation -framework CoreGraphics -framework ImageIO -framework ScreenCaptureKit
 #include <stdlib.h>
 #include "capture_darwin.h"
 */
