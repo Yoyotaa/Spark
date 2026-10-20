@@ -53,9 +53,19 @@ type VisionSettings struct {
 	ShowCursor bool `json:"showCursor"`
 }
 
+// Voice engines.
+const (
+	VoiceSystem = "system" // OS voices: instant, robotic
+	VoiceGemini = "gemini" // neural, ~2.5 s more latency, free-tier quota
+)
+
 type VoiceSettings struct {
-	Enabled     bool    `json:"enabled"`
-	Voice       string  `json:"voice"` // "" = best available
+	Enabled bool   `json:"enabled"`
+	Engine  string `json:"engine"`
+	// Neural voice (Gemini): prebuilt voice name and delivery style.
+	NeuralVoice string  `json:"neuralVoice"`
+	Style       string  `json:"style"`
+	Voice       string  `json:"voice"` // system voice, "" = best available
 	Rate        float64 `json:"rate"`  // 0.5-2.0
 	ReadAnswers bool    `json:"readAnswers"`
 	Greeting    bool    `json:"greeting"`
@@ -130,7 +140,11 @@ func Defaults() Settings {
 			Fallback:     true,
 		},
 		Vision: VisionSettings{Enabled: true, MaxSide: 1568, Quality: 72, ShowCursor: true},
-		Voice:  VoiceSettings{Enabled: true, Rate: 1, ReadAnswers: true, Greeting: true},
+		Voice: VoiceSettings{
+			Enabled: true, Engine: VoiceSystem, NeuralVoice: "Despina",
+			Style: "calme, posée et assurée, comme une assistante d'élite",
+			Rate:  1, ReadAnswers: true, Greeting: true,
+		},
 		Mic: MicSettings{
 			Mode:        MicPushToTalk,
 			PushToTalk:  Shortcut{Key: "F8"},
@@ -224,6 +238,13 @@ func (s Settings) Normalize() Settings {
 	s.Vision.Quality = clamp(s.Vision.Quality, 30, 95)
 
 	s.Voice.Rate = clamp(s.Voice.Rate, 0.5, 2)
+	s.Voice.Engine = oneOf(s.Voice.Engine, []string{VoiceSystem, VoiceGemini}, d.Voice.Engine)
+	if strings.TrimSpace(s.Voice.NeuralVoice) == "" {
+		s.Voice.NeuralVoice = d.Voice.NeuralVoice
+	}
+	if len(s.Voice.Style) > 300 {
+		s.Voice.Style = s.Voice.Style[:300]
+	}
 
 	s.Mic.Mode = oneOf(s.Mic.Mode, []string{MicOff, MicPushToTalk, MicContinuous}, d.Mic.Mode)
 	s.Mic.PushToTalk = s.Mic.PushToTalk.normalized()

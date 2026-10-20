@@ -239,3 +239,14 @@ export async function setMicTest(on: boolean): Promise<void> {
 export function interrupt(): void {
   if (inWails) void App.Interrupt()
 }
+
+export type NeuralVoice = {name: string; style: string}
+
+export async function listNeuralVoices(): Promise<NeuralVoice[]> {
+  if (inWails) return App.ListNeuralVoices()
+  return [
+    {name: 'Despina', style: 'Douce'},
+    {name: 'Achernar', style: 'Feutrée'},
+    {name: 'Kore', style: 'Ferme'},
+  ]
+}

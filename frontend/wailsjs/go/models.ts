@@ -107,6 +107,20 @@ export namespace app {
 	        this.live = source["live"];
 	    }
 	}
+	export class NeuralVoice {
+	    name: string;
+	    style: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NeuralVoice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.style = source["style"];
+	    }
+	}
 	export class SaveResult {
 	    settings: config.Settings;
 	    hotkeyError?: string;
@@ -383,6 +397,9 @@ export namespace config {
 	}
 	export class VoiceSettings {
 	    enabled: boolean;
+	    engine: string;
+	    neuralVoice: string;
+	    style: string;
 	    voice: string;
 	    rate: number;
 	    readAnswers: boolean;
@@ -395,6 +412,9 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
+	        this.engine = source["engine"];
+	        this.neuralVoice = source["neuralVoice"];
+	        this.style = source["style"];
 	        this.voice = source["voice"];
 	        this.rate = source["rate"];
 	        this.readAnswers = source["readAnswers"];

@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -38,6 +39,8 @@ type App struct {
 	overlay  *overlay.Controller
 	vision   *vision.Service
 	tts      *audio.SystemTTS
+	neural   *ai.GeminiVoice // nil: system voice only. Guarded by mu.
+	player   audio.Player
 	speakMu  sync.Mutex // one voice at a time
 	voice    *voice
 	visible  atomic.Bool
@@ -88,6 +91,7 @@ func (a *App) Startup(ctx context.Context) {
 	// Created here rather than in New: Wails also runs New when generating
 	// bindings, where listing the system voices is wasted work.
 	a.tts = audio.NewSystemTTS()
+	a.player = audio.NewPlayer()
 	a.voice = newVoice(a)
 	a.apply(a.settings.Get(), true)
 }
@@ -128,6 +132,9 @@ func (a *App) apply(s config.Settings, first bool) {
 		a.tts.Configure(s.Voice.Voice, s.Voice.Rate)
 		a.debugf("voice: %q ×%.2f", a.tts.Voice(), s.Voice.Rate)
 	}
+	if first || s.Voice != old.Voice {
+		a.rebuildNeuralLocked()
+	}
 	if first || !aiEqual(s.AI, old.AI) {
 		a.rebuildLLM()
 	}
@@ -154,6 +161,23 @@ func (a *App) rebuildLLM() {
 	} else {
 		log.Printf("ai: non configurée (%v)", a.llmErr)
 	}
+}
+
+// rebuildNeuralLocked sets up the neural voice when selected and a Gemini
+// key exists. Caller holds a.mu.
+func (a *App) rebuildNeuralLocked() {
+	a.neural = nil
+	v := a.cfg.Voice
+	if v.Engine != config.VoiceGemini {
+		return
+	}
+	key, _ := config.APIKey(config.ProviderGemini)
+	if key == "" {
+		log.Printf("voice: neural voice needs a Gemini key, using the system voice")
+		return
+	}
+	a.neural = ai.NewGeminiVoice(key, "", v.NeuralVoice, v.Style, a.player)
+	a.debugf("voice: neural %s", v.NeuralVoice)
 }
 
 // newProvider builds a provider from the current settings and key store.
@@ -262,18 +286,50 @@ func (a *App) speakAll(ctx context.Context, sentences <-chan string) {
 	a.speakMu.Lock()
 	defer a.speakMu.Unlock()
 
+	a.mu.RLock()
+	neural := a.neural
+	a.mu.RUnlock()
+
 	started := false
-	for s := range sentences {
-		if !a.voiceOn() || ctx.Err() != nil {
-			continue
-		}
+	begin := func() {
 		if !started {
 			started = true
 			a.voice.setSpeaking(true)
 			a.emit(EventSpeaking, true)
 		}
-		if err := a.tts.Speak(ctx, spoken(s)); err != nil && ctx.Err() == nil {
+	}
+	system := func(text string) {
+		if err := a.tts.Speak(ctx, spoken(text)); err != nil && ctx.Err() == nil {
 			log.Printf("tts: %v", err)
+		}
+	}
+
+	if neural != nil {
+		// One request per answer: the free tier allows only a few TTS
+		// requests per minute. The whole answer is spoken in one stream.
+		var all []string
+		for s := range sentences {
+			if a.voiceOn() && ctx.Err() == nil {
+				all = append(all, s)
+			}
+		}
+		if len(all) > 0 && ctx.Err() == nil {
+			begin()
+			text := strings.Join(all, " ")
+			if err := neural.Speak(ctx, spoken(text)); err != nil && ctx.Err() == nil {
+				log.Printf("tts: neural voice failed (%v)", err)
+				if errors.Is(err, ai.ErrNoAudio) {
+					system(text) // never leave A.R.I.A mute
+				}
+			}
+		}
+	} else {
+		for s := range sentences {
+			if !a.voiceOn() || ctx.Err() != nil {
+				continue
+			}
+			begin()
+			system(s)
 		}
 	}
 	if started {

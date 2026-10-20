@@ -3,10 +3,12 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -198,5 +200,63 @@ func TestGeminiTranscriber(t *testing.T) {
 	part := body["contents"].([]any)[0].(map[string]any)["parts"].([]any)[0].(map[string]any)
 	if part["inline_data"].(map[string]any)["mime_type"] != "audio/wav" {
 		t.Fatalf("audio not sent: %v", part)
+	}
+}
+
+type fakePlayer struct {
+	mu      sync.Mutex
+	rate    int
+	pcm     []byte
+	drained bool
+}
+
+func (p *fakePlayer) Start(rate int) error { p.mu.Lock(); p.rate = rate; p.mu.Unlock(); return nil }
+func (p *fakePlayer) Write(b []byte)       { p.mu.Lock(); p.pcm = append(p.pcm, b...); p.mu.Unlock() }
+func (p *fakePlayer) Drain(context.Context) error {
+	p.mu.Lock()
+	p.drained = true
+	p.mu.Unlock()
+	return nil
+}
+func (p *fakePlayer) Stop() {}
+
+func TestGeminiVoiceStreams(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/interactions" || r.URL.Query().Get("alt") != "sse" {
+			t.Errorf("unexpected URL %s", r.URL)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fmt.Fprint(w, "event: interaction.created\ndata: {\"interaction\":{\"id\":\"x\"}}\n\n")
+		for _, chunk := range []string{"AAEC", "AwQF"} { // 3 bytes each
+			fmt.Fprintf(w, "event: step.delta\ndata: {\"index\":0,\"delta\":{\"mime_type\":\"audio/l16\",\"data\":%q}}\n\n", chunk)
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := &fakePlayer{}
+	if err := NewGeminiVoice("k", srv.URL, "Despina", "posée", p).Speak(context.Background(), "Recule."); err != nil {
+		t.Fatal(err)
+	}
+	if p.rate != 24000 || len(p.pcm) != 6 || !p.drained {
+		t.Fatalf("player got rate=%d bytes=%d drained=%v", p.rate, len(p.pcm), p.drained)
+	}
+	cfg := body["generation_config"].(map[string]any)["speech_config"].([]any)[0].(map[string]any)
+	ann := body["input"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["annotations"].([]any)[0].(map[string]any)
+	if cfg["voice"] != "Despina" || ann["style"] != "posée" || body["stream"] != true {
+		t.Fatalf("bad request: %v", body)
+	}
+}
+
+func TestGeminiVoiceQuotaFallsBack(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"quota"}}`)
+	}))
+	defer srv.Close()
+	err := NewGeminiVoice("k", srv.URL, "Kore", "", &fakePlayer{}).Speak(context.Background(), "x")
+	if !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("a failure before any audio must be ErrNoAudio (fallback), got %v", err)
 	}
 }

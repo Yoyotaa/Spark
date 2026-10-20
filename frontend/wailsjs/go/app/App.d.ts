@@ -27,6 +27,8 @@ export function KeyLabel(arg1:string):Promise<string>;
 
 export function ListModels(arg1:string):Promise<Array<string>>;
 
+export function ListNeuralVoices():Promise<Array<app.NeuralVoice>>;
+
 export function ListVoices():Promise<Array<audio.Voice>>;
 
 export function RequestMicPermission():Promise<app.MicStatus>;

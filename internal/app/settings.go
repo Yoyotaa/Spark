@@ -100,6 +100,7 @@ func (a *App) SetAPIKey(provider, key string) (AIStatus, error) {
 	}
 	a.mu.Lock()
 	a.rebuildLLM()
+	a.rebuildNeuralLocked()
 	a.mu.Unlock()
 	return a.GetAIStatus(), nil
 }
@@ -263,4 +264,18 @@ func (a *App) RequestMicPermission() MicStatus {
 // SetMicTest opens the mic for the settings level meter (EventVoiceLevel).
 func (a *App) SetMicTest(on bool) error {
 	return a.voice.setTesting(on)
+}
+
+// NeuralVoice is a Gemini prebuilt voice for the settings page.
+type NeuralVoice struct {
+	Name  string `json:"name"`
+	Style string `json:"style"`
+}
+
+func (a *App) ListNeuralVoices() []NeuralVoice {
+	out := make([]NeuralVoice, len(ai.NeuralVoices))
+	for i, v := range ai.NeuralVoices {
+		out[i] = NeuralVoice{Name: v.Name, Style: v.Style}
+	}
+	return out
 }

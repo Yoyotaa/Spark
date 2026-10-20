@@ -1,6 +1,6 @@
 import {useEffect, useId, useRef, useState} from 'react'
 import * as bridge from '../../lib/bridge'
-import type {AIStatus, AppInfo, MicStatus, TestResult, Voice} from '../../lib/bridge'
+import type {AIStatus, AppInfo, MicStatus, NeuralVoice, TestResult, Voice} from '../../lib/bridge'
 import {ACCENTS, DEFAULT_MODELS, MODEL_HINTS, type Accent, type Provider, type Settings} from '../../lib/settings'
 import {Badge, Button, Group, inputClass, Row, Segmented, Select, SecretField, ShortcutRecorder, Slider, Toggle} from './controls'
 
@@ -301,8 +301,10 @@ export function VisionSection({s, update}: SectionProps) {
 
 export function VoiceSection({s, update}: SectionProps) {
   const [voices, setVoices] = useState<Voice[]>([])
+  const [neural, setNeural] = useState<NeuralVoice[]>([])
   useEffect(() => {
     void bridge.listVoices().then(setVoices).catch(() => setVoices([]))
+    void bridge.listNeuralVoices().then(setNeural)
   }, [])
 
   const lang = s.ai.language
@@ -311,6 +313,8 @@ export function VoiceSection({s, update}: SectionProps) {
     const pb = b.lang.startsWith(lang) ? 0 : 1
     return pa - pb || a.name.localeCompare(b.name)
   })
+  const isNeural = s.voice.engine === 'gemini'
+  const off = !s.voice.enabled
 
   return (
     <div className="space-y-6">
@@ -318,41 +322,86 @@ export function VoiceSection({s, update}: SectionProps) {
         <Row label="Voix activée">
           <Toggle label="Voix" checked={s.voice.enabled} onChange={(v) => update((d) => void (d.voice.enabled = v))} />
         </Row>
-        <Row label="Voix" help="« Automatique » choisit la meilleure voix féminine française installée." disabled={!s.voice.enabled}>
-          <Select
-            label="Voix"
-            value={s.voice.voice}
-            onChange={(v) => update((d) => void (d.voice.voice = v))}
-            options={[{value: '', label: 'Automatique'}, ...sorted.map((v) => ({value: v.name, label: `${v.name} · ${v.lang}`}))]}
+        <Row
+          label="Moteur"
+          help={
+            isNeural
+              ? 'Voix neuronale Gemini : naturelle, mais ~2,5 s de délai en plus et quota gratuit limité. En cas d’échec, la voix système prend le relais.'
+              : 'Voix du système : instantanée, plus synthétique.'
+          }
+          disabled={off}
+        >
+          <Segmented
+            value={s.voice.engine}
+            options={[
+              {value: 'system', label: 'Système'},
+              {value: 'gemini', label: 'Neuronale (Gemini)'},
+            ]}
+            onChange={(v) => update((d) => void (d.voice.engine = v))}
           />
         </Row>
-        <Row label="Vitesse" disabled={!s.voice.enabled}>
-          <Slider
-            label="Vitesse"
-            value={s.voice.rate}
-            min={0.5}
-            max={2}
-            step={0.05}
-            onChange={(v) => update((d) => void (d.voice.rate = v))}
-            format={(v) => `×${v.toFixed(2)}`}
-          />
-        </Row>
-        <Row label="Lire les réponses à voix haute" disabled={!s.voice.enabled}>
+        {isNeural ? (
+          <>
+            <Row label="Voix neuronale" help="Nécessite une clé Gemini (même gratuite)." disabled={off}>
+              <Select
+                label="Voix neuronale"
+                value={s.voice.neuralVoice}
+                onChange={(v) => update((d) => void (d.voice.neuralVoice = v))}
+                options={neural.map((v) => ({value: v.name, label: `${v.name} · ${v.style}`}))}
+              />
+            </Row>
+            <Row label="Style" help="Comment A.R.I.A parle : ton, rythme, attitude." stacked disabled={off}>
+              <input
+                key={s.voice.style}
+                defaultValue={s.voice.style}
+                maxLength={300}
+                onBlur={(e) => update((d) => void (d.voice.style = e.target.value.trim()))}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                className={inputClass}
+              />
+            </Row>
+          </>
+        ) : (
+          <>
+            <Row label="Voix" help="« Automatique » choisit la meilleure voix féminine française installée." disabled={off}>
+              <Select
+                label="Voix"
+                value={s.voice.voice}
+                onChange={(v) => update((d) => void (d.voice.voice = v))}
+                options={[{value: '', label: 'Automatique'}, ...sorted.map((v) => ({value: v.name, label: `${v.name} · ${v.lang}`}))]}
+              />
+            </Row>
+            <Row label="Vitesse" disabled={off}>
+              <Slider
+                label="Vitesse"
+                value={s.voice.rate}
+                min={0.5}
+                max={2}
+                step={0.05}
+                onChange={(v) => update((d) => void (d.voice.rate = v))}
+                format={(v) => `×${v.toFixed(2)}`}
+              />
+            </Row>
+          </>
+        )}
+        <Row label="Lire les réponses à voix haute" disabled={off}>
           <Toggle label="Lire les réponses" checked={s.voice.readAnswers} onChange={(v) => update((d) => void (d.voice.readAnswers = v))} />
         </Row>
         <Row label="Message d’accueil au démarrage">
           <Toggle label="Accueil" checked={s.voice.greeting} onChange={(v) => update((d) => void (d.voice.greeting = v))} />
         </Row>
-        <Row label="Écouter un essai" disabled={!s.voice.enabled}>
+        <Row label="Écouter un essai" disabled={off}>
           <Button variant="primary" onClick={bridge.testVoice}>
             ▶ Tester la voix
           </Button>
         </Row>
       </Group>
-      <p className="px-1 text-[11.5px] leading-relaxed text-slate-500">
-        Pour une voix bien plus naturelle sur macOS : Réglages Système › Accessibilité › Contenu énoncé › Voix système › Gérer les voix ›
-        Français › <span className="text-slate-300">Audrey (Premium)</span>. Une voix neuronale arrivera avec le module audio.
-      </p>
+      {!isNeural && (
+        <p className="px-1 text-[11.5px] leading-relaxed text-slate-500">
+          Pour une voix système plus naturelle sur macOS : Réglages Système › Accessibilité › Contenu énoncé › Voix système › Gérer les
+          voix › Français › <span className="text-slate-300">Audrey (Premium)</span>.
+        </p>
+      )}
     </div>
   )
 }

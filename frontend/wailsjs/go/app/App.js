@@ -46,6 +46,10 @@ export function ListModels(arg1) {
   return window['go']['app']['App']['ListModels'](arg1);
 }
 
+export function ListNeuralVoices() {
+  return window['go']['app']['App']['ListNeuralVoices']();
+}
+
 export function ListVoices() {
   return window['go']['app']['App']['ListVoices']();
 }

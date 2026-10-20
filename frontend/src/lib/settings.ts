@@ -18,7 +18,16 @@ export type Settings = {
     fallback: boolean
   }
   vision: {enabled: boolean; maxSide: number; quality: number; showCursor: boolean}
-  voice: {enabled: boolean; voice: string; rate: number; readAnswers: boolean; greeting: boolean}
+  voice: {
+    enabled: boolean
+    engine: 'system' | 'gemini'
+    neuralVoice: string
+    style: string
+    voice: string
+    rate: number
+    readAnswers: boolean
+    greeting: boolean
+  }
   mic: {
     mode: 'off' | 'ptt' | 'continuous'
     pushToTalk: Shortcut
@@ -61,7 +70,16 @@ export const DEFAULTS: Settings = {
     fallback: true,
   },
   vision: {enabled: true, maxSide: 1568, quality: 72, showCursor: true},
-  voice: {enabled: true, voice: '', rate: 1, readAnswers: true, greeting: true},
+  voice: {
+    enabled: true,
+    engine: 'system',
+    neuralVoice: 'Despina',
+    style: 'calme, posée et assurée, comme une assistante d’élite',
+    voice: '',
+    rate: 1,
+    readAnswers: true,
+    greeting: true,
+  },
   mic: {mode: 'ptt', pushToTalk: sc('F8'), sensitivity: 50, wakeWord: true, wakePhrase: 'Aria', cues: true},
   hotkeys: {
     toggleChat: sc('A', {alt: true, shift: true}),
