@@ -53,17 +53,19 @@ func New(cfg config.Config, settings *config.Store) *App {
 		ov.OnToggle = func(ignoring bool) { log.Printf("overlay: click-through=%v", ignoring) }
 	}
 	a := &App{cfg: cfg, settings: settings, overlay: ov, vision: vision.New(vision.DefaultOptions)}
-	if !cfg.Mute {
-		tts := audio.NewSystemTTS(cfg.Voice)
-		a.debugf("voice: %q", tts.Voice())
-		a.tts = tts
-	}
 	a.visible.Store(true)
 	return a
 }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	// Resolved here rather than in New: Wails also runs New when generating
+	// bindings, where listing the system voices is wasted work.
+	if !a.cfg.Mute {
+		tts := audio.NewSystemTTS(a.cfg.Voice)
+		a.debugf("voice: %q", tts.Voice())
+		a.tts = tts
+	}
 }
 
 // DomReady runs once the native window and the webview exist.
