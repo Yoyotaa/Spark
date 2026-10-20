@@ -75,10 +75,57 @@ func TestGeminiStream(t *testing.T) {
 	if img["mime_type"] != "image/jpeg" || img["data"] != base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8}) {
 		t.Fatalf("bad image part: %v", img)
 	}
+	thinking := body["generation_config"].(map[string]any)["thinking_config"].(map[string]any)
+	if thinking["thinking_level"] != "low" {
+		t.Fatalf("thinking level not sent: %v", thinking)
+	}
+}
+
+func TestGeminiRetries(t *testing.T) {
+	for name, fail := range map[string]func(w http.ResponseWriter, body map[string]any) bool{
+		// 503 "high demand" once, then OK.
+		"503": func(w http.ResponseWriter, _ map[string]any) bool {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":{"message":"high demand"}}`)
+			return true
+		},
+		// A model without thinking control: retried without the field.
+		"thinking": func(w http.ResponseWriter, body map[string]any) bool {
+			if _, has := body["generation_config"]; !has {
+				return false
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"message":"thinking_level is not supported for this model"}}`)
+			return true
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				var body map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				if calls == 1 && fail(w, body) {
+					return
+				}
+				fmt.Fprint(w, sse("ok"))
+			}))
+			defer srv.Close()
+
+			g := NewGemini("k", "m", srv.URL)
+			ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if text, err := collect(t, ch); err != nil || text != "ok" || calls != 2 {
+				t.Fatalf("got %q, %v after %d calls", text, err, calls)
+			}
+		})
+	}
 }
 
 func TestGeminiFriendlyErrors(t *testing.T) {
-	for status, want := range map[int]string{429: "quota", 403: "clé API", 500: "Gemini 500"} {
+	for status, want := range map[int]string{429: "quota", 403: "clé API", 500: "Gemini 500", 503: "saturé"} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(status)
 			fmt.Fprint(w, `{"error":{"message":"boom"}}`)

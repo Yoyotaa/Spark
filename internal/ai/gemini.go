@@ -10,14 +10,23 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const (
 	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-	// Measured on the free tier (Oct 2026): 3.6 Flash answers in ~2-3 s,
-	// 3.5 Flash-Lite in ~0.5 s, while 3.8 Flash was queued for ~40 s.
+	// Measured on the free tier (Oct 2026), question + screenshot, first
+	// token: 3.6 Flash ≈ 1.8 s with thinking "low" (5-10 s by default),
+	// 3.5 Flash-Lite ≈ 0.9 s, 3.8 Flash queued for ~40 s.
 	DefaultGeminiModel = "gemini-3.6-flash"
+
+	// On screenshots the model thinks 5-10x more than on text: "low" cuts
+	// the first-token latency by 3-5x. Dropped if a model rejects it.
+	defaultThinkingLevel = "low"
+
+	// The free tier answers 503 "high demand" in bursts: one quick retry.
+	retryDelay = 800 * time.Millisecond
 
 	// Without response headers after this delay, the model is considered
 	// saturated: better to tell the user than to hang.
@@ -31,6 +40,9 @@ type Gemini struct {
 	model   string
 	baseURL string
 	client  *http.Client
+
+	thinkingLevel string
+	noThinking    atomic.Bool
 }
 
 // NewGemini creates a client; empty model and baseURL select the defaults.
@@ -42,9 +54,10 @@ func NewGemini(apiKey, model, baseURL string) *Gemini {
 		baseURL = geminiBaseURL
 	}
 	return &Gemini{
-		apiKey:  apiKey,
-		model:   model,
-		baseURL: strings.TrimSuffix(baseURL, "/"),
+		apiKey:        apiKey,
+		model:         model,
+		baseURL:       strings.TrimSuffix(baseURL, "/"),
+		thinkingLevel: defaultThinkingLevel,
 		// No global timeout: a stream may legitimately last a while; the
 		// caller's context bounds it.
 		client: &http.Client{Transport: &http.Transport{
@@ -75,8 +88,17 @@ type geminiContent struct {
 }
 
 type geminiRequest struct {
-	SystemInstruction *geminiContent  `json:"system_instruction,omitempty"`
-	Contents          []geminiContent `json:"contents"`
+	SystemInstruction *geminiContent   `json:"system_instruction,omitempty"`
+	Contents          []geminiContent  `json:"contents"`
+	GenerationConfig  *geminiGenConfig `json:"generation_config,omitempty"`
+}
+
+type geminiGenConfig struct {
+	ThinkingConfig *geminiThinking `json:"thinking_config,omitempty"`
+}
+
+type geminiThinking struct {
+	ThinkingLevel string `json:"thinking_level"`
 }
 
 type geminiResponse struct {
@@ -114,6 +136,9 @@ func (g *Gemini) body(system string, history []Message) ([]byte, error) {
 			req.Contents = append(req.Contents, c)
 		}
 	}
+	if g.thinkingLevel != "" && !g.noThinking.Load() {
+		req.GenerationConfig = &geminiGenConfig{ThinkingConfig: &geminiThinking{ThinkingLevel: g.thinkingLevel}}
+	}
 	return json.Marshal(req)
 }
 
@@ -128,30 +153,51 @@ func (g *Gemini) Stream(ctx context.Context, system string, history []Message) (
 }
 
 func (g *Gemini) post(ctx context.Context, system string, history []Message) (*http.Response, error) {
-	body, err := g.body(system, history)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, g.model)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", g.apiKey) // header, never in the URL/logs
+	retried := false
+	for {
+		body, err := g.body(system, history)
+		if err != nil {
+			return nil, err
+		}
+		url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, g.model)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-goog-api-key", g.apiKey) // header, never in the URL/logs
 
-	resp, err := g.client.Do(req)
-	switch {
-	case err != nil && ctx.Err() != nil:
-		return nil, ctx.Err()
-	case err != nil && isTimeout(err):
-		return nil, fmt.Errorf("%s ne répond pas (modèle saturé ?) : essaie un autre modèle via SPARK_LLM_MODEL", g.model)
-	case err != nil:
-		return nil, fmt.Errorf("Gemini injoignable : %w", err)
-	case resp.StatusCode != http.StatusOK:
-		return nil, friendlyError(resp.StatusCode, decodeError(resp))
+		resp, err := g.client.Do(req)
+		switch {
+		case err != nil && ctx.Err() != nil:
+			return nil, ctx.Err()
+		case err != nil && isTimeout(err):
+			return nil, fmt.Errorf("%s ne répond pas (modèle saturé ?) : essaie un autre modèle via SPARK_LLM_MODEL", g.model)
+		case err != nil:
+			return nil, fmt.Errorf("Gemini injoignable : %w", err)
+		case resp.StatusCode == http.StatusOK:
+			return resp, nil
+		}
+
+		apiErr := decodeError(resp)
+		switch {
+		case retried:
+		case resp.StatusCode == http.StatusBadRequest && !g.noThinking.Load() &&
+			strings.Contains(strings.ToLower(apiErr.Error.Message), "thinking"):
+			g.noThinking.Store(true) // this model has no thinking control
+			retried = true
+			continue
+		case resp.StatusCode == http.StatusServiceUnavailable:
+			retried = true
+			select {
+			case <-time.After(retryDelay):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return nil, friendlyError(resp.StatusCode, apiErr)
 	}
-	return resp, nil
 }
 
 func isTimeout(err error) bool {
@@ -176,6 +222,8 @@ func friendlyError(status int, e geminiError) error {
 		return errors.New("clé API Gemini refusée : vérifie SPARK_LLM_API_KEY")
 	case http.StatusTooManyRequests:
 		return errors.New("quota Gemini atteint (niveau gratuit) : réessaie dans une minute")
+	case http.StatusServiceUnavailable:
+		return errors.New("Gemini est saturé en ce moment (niveau gratuit) : réessaie dans quelques secondes")
 	case http.StatusNotFound:
 		return fmt.Errorf("modèle Gemini introuvable : %s", e.Error.Message)
 	}

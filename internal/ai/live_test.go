@@ -10,7 +10,7 @@ import (
 
 // Real Gemini call, opt-in (uses the free quota):
 //
-//	SPARK_AI_LIVE=1 go test -run Live -v ./internal/ai
+//	SPARK_AI_LIVE=1 [SPARK_AI_LIVE_IMAGE=shot.jpg] go test -run Live -v ./internal/ai
 func TestGeminiLive(t *testing.T) {
 	key := os.Getenv("SPARK_LLM_API_KEY")
 	if os.Getenv("SPARK_AI_LIVE") != "1" || key == "" {
@@ -20,8 +20,17 @@ func TestGeminiLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	q := Message{Role: RoleUser, Text: "Test de connexion : réponds en une courte phrase."}
+	if path := os.Getenv("SPARK_AI_LIVE_IMAGE"); path != "" {
+		img, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q = Message{Role: RoleUser, Text: "Que dois-je faire dans cette situation ?", Image: img}
+	}
+
 	start := time.Now()
-	ch, err := g.Stream(ctx, Persona, []Message{{Role: RoleUser, Text: "Test de connexion : réponds en une courte phrase."}})
+	ch, err := g.Stream(ctx, Persona, []Message{q})
 	if err != nil {
 		t.Fatal(err)
 	}
