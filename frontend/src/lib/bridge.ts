@@ -277,3 +277,8 @@ export function logFrontend(message: string): void {
   if (inWails) void App.LogFrontend(message)
   else console.error(message)
 }
+
+/** Closes Spark. */
+export function quit(): void {
+  if (inWails) void App.Quit()
+}

@@ -762,6 +762,11 @@ export function AdvancedSection({s, update, onReset}: SectionProps & {onReset: (
           />
         </Row>
         {loginError && <div className="px-4 py-3 text-[11.5px] text-rose-200">{loginError}</div>}
+        <Row label="Quitter Spark" help="Aussi depuis l’icône ✦ de la barre des menus.">
+          <Button variant="danger" onClick={bridge.quit}>
+            Quitter
+          </Button>
+        </Row>
       </Group>
       <Group title="Performance">
         <Row

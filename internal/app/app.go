@@ -22,6 +22,7 @@ import (
 	"spark/internal/config"
 	"spark/internal/hotkey"
 	"spark/internal/overlay"
+	"spark/internal/tray"
 	"spark/internal/vision"
 )
 
@@ -131,6 +132,17 @@ func (a *App) DomReady(context.Context) {
 	a.registerHotkeys()
 	a.mu.Unlock()
 	go a.proactiveLoop(a.ctx)
+
+	err := tray.Start("Spark — A.R.I.A", []tray.Item{
+		{Title: "Parler à A.R.I.A", Action: a.toggleChat},
+		{Title: "Afficher / masquer Spark", Action: a.toggleVisible},
+		{Title: "Paramètres…", Action: a.openSettings},
+		{},
+		{Title: "Quitter Spark", Action: a.Quit},
+	})
+	if err != nil {
+		log.Printf("tray: %v", err)
+	}
 }
 
 // BeforeClose runs first when the app quits: stop talking to the webview
@@ -391,6 +403,12 @@ func (a *App) speakAll(ctx context.Context, sentences <-chan string) {
 // out letter by letter.
 func spoken(text string) string {
 	return strings.ReplaceAll(text, "A.R.I.A", "Aria")
+}
+
+// Quit closes Spark (menu bar icon, settings).
+func (a *App) Quit() {
+	a.beginClose()
+	runtime.Quit(a.ctx)
 }
 
 func (a *App) toggleChat() {

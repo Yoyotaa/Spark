@@ -62,6 +62,10 @@ export function LogFrontend(arg1) {
   return window['go']['app']['App']['LogFrontend'](arg1);
 }
 
+export function Quit() {
+  return window['go']['app']['App']['Quit']();
+}
+
 export function RequestMicPermission() {
   return window['go']['app']['App']['RequestMicPermission']();
 }
