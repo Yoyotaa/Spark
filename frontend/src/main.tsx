@@ -4,6 +4,10 @@ import '@fontsource-variable/space-grotesk'
 import '@fontsource-variable/jetbrains-mono'
 import './style.css'
 import App from './App'
+import {logFrontend} from './lib/bridge'
+
+window.addEventListener('error', (e) => logFrontend(`${e.message} (${e.filename}:${e.lineno})`))
+window.addEventListener('unhandledrejection', (e) => logFrontend(`promesse rejetée : ${String(e.reason)}`))
 
 // Outside Wails (`npm run dev` in a browser) there is no desktop behind the
 // transparent page: paint a fake one to judge the design.

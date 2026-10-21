@@ -32,6 +32,9 @@ type platform interface {
 	// yield lowers the window (true) so OS dialogs appear above it, and
 	// restores it (false).
 	yield(y bool)
+	// ensureFront puts the window back on top if needed and reports what
+	// it repaired (0: nothing).
+	ensureFront() int
 }
 
 // WindowClassName is given to Wails (options.Windows.WindowClassName) so the
@@ -51,6 +54,8 @@ type Controller struct {
 	// OnToggle, if set before Start, is called from the polling goroutine
 	// each time click-through changes (debug logging).
 	OnToggle func(ignoring bool)
+	// OnRepair, if set, is told when the window had to be put back on top.
+	OnRepair func(what int)
 
 	// captured forces the window to keep the mouse (e.g. chat opened with
 	// a hotkey), regardless of the cursor position.
@@ -76,6 +81,7 @@ func (c *Controller) Start(ctx context.Context) error {
 	}
 	c.native.setIgnoreMouse(true)
 	go c.loop(ctx)
+	go c.keepFront(ctx)
 	return nil
 }
 
@@ -88,6 +94,29 @@ func (c *Controller) SetRegions(r []Rect) {
 // SetCaptured forces (or releases) mouse capture for the whole window.
 func (c *Controller) SetCaptured(v bool) {
 	c.captured.Store(v)
+}
+
+const frontCheck = 2 * time.Second
+
+// keepFront periodically makes sure the overlay is still the top-most,
+// visible window: a lost overlay is invisible but keeps running, which
+// looks exactly like a crash to the user.
+func (c *Controller) keepFront(ctx context.Context) {
+	t := time.NewTicker(frontCheck)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if c.paused.Load() {
+			continue
+		}
+		if fixed := c.native.ensureFront(); fixed != 0 && c.OnRepair != nil {
+			c.OnRepair(fixed)
+		}
+	}
 }
 
 // SetPollRate changes how often the cursor is read (Hz).

@@ -29,9 +29,10 @@ func (f *fakePlatform) setIgnoreMouse(v bool) {
 	f.toggles++
 }
 
-func (f *fakePlatform) focus()        {}
-func (f *fakePlatform) restoreFocus() {}
-func (f *fakePlatform) yield(bool)    {}
+func (f *fakePlatform) focus()           {}
+func (f *fakePlatform) restoreFocus()    {}
+func (f *fakePlatform) yield(bool)       {}
+func (f *fakePlatform) ensureFront() int { return 0 }
 
 func (f *fakePlatform) move(x, y float64) {
 	f.mu.Lock()

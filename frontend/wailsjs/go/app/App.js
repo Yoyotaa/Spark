@@ -58,6 +58,10 @@ export function ListVoices() {
   return window['go']['app']['App']['ListVoices']();
 }
 
+export function LogFrontend(arg1) {
+  return window['go']['app']['App']['LogFrontend'](arg1);
+}
+
 export function RequestMicPermission() {
   return window['go']['app']['App']['RequestMicPermission']();
 }

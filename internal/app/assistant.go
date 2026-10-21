@@ -57,6 +57,12 @@ func (a *App) Ask(text string, withScreen bool) (Turn, error) {
 	return a.ask(text, withScreen, nil, nil)
 }
 
+// askThen is ask with a hook called once the request is accepted, right
+// before the answer starts streaming.
+func (a *App) askThen(text string, withScreen bool, frame *vision.Frame, capt *Capture, accepted func(Turn)) (Turn, error) {
+	return a.askWith(text, withScreen, frame, capt, accepted)
+}
+
 // interruptLocked stops the current question (request, answer, voice)
 // and waits for it, so the history keeps a strict user/model alternation.
 // Caller holds askMu; the waited goroutine never needs it before done.
@@ -101,7 +107,11 @@ func (a *App) finish(done chan struct{}) {
 // The lock is only held to register the question: capture and network run
 // outside of it, so a new question (or the push-to-talk key) interrupts a
 // stuck request immediately instead of waiting for its timeout.
-func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Capture) (turn Turn, err error) {
+func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Capture) (Turn, error) {
+	return a.askWith(text, withScreen, frame, capt, nil)
+}
+
+func (a *App) askWith(text string, withScreen bool, frame *vision.Frame, capt *Capture, accepted func(Turn)) (turn Turn, err error) {
 	defer func() {
 		if err != nil {
 			a.debugf("ai: question refusée : %v", err)
@@ -186,6 +196,9 @@ func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Captu
 	a.history = append(a.history, question)
 	a.convMu.Unlock()
 
+	if accepted != nil {
+		accepted(turn)
+	}
 	go a.answer(ctx, cancel, done, turn.ID, stream, start, cfg.Voice.ReadAnswers)
 	return turn, nil
 }

@@ -263,3 +263,14 @@ export async function setLaunchAtLogin(on: boolean): Promise<boolean> {
   previewLogin = on
   return on
 }
+
+// Browser preview only: lets a test script replay backend events.
+if (!inWails && typeof window !== 'undefined') {
+  ;(window as unknown as {__sparkEmit: typeof emitLocal}).__sparkEmit = emitLocal
+}
+
+/** Reports a frontend error to the terminal (debugging the overlay). */
+export function logFrontend(message: string): void {
+  if (inWails) void App.LogFrontend(message)
+  else console.error(message)
+}

@@ -398,15 +398,14 @@ func (v *voice) onFinal(text string) {
 		frame, capt = shot.frame, shot.capt
 	}
 	v.emitState("idle")
-	turn, err := v.a.ask(text, false, frame, capt)
+	// The UI must know about the question before the first answer token
+	// (the answer starts streaming before ask returns).
+	_, err := v.a.askThen(text, false, frame, capt, func(t Turn) {
+		v.a.emit(EventVoiceTurn, VoiceTurn{Text: text, Turn: t})
+	})
 	if err != nil {
 		v.onError(err)
-		return
 	}
-	if turn.Interrupted {
-		return // the user already asked something else
-	}
-	v.a.emit(EventVoiceTurn, VoiceTurn{Text: text, Turn: turn})
 }
 
 func (v *voice) discard(shot *pendingShot) {
@@ -460,13 +459,21 @@ func (v *voice) setTesting(on bool) error {
 // requestPermissions shows the OS permission dialogs above the overlay
 // (which otherwise covers them) and restores it once they are answered.
 func (a *App) requestPermissions(done func(ok bool)) {
-	if a.overlay != nil {
-		a.overlay.Yield(true)
+	if a.overlay == nil {
+		audio.RequestPermissions(done)
+		return
 	}
+	a.overlay.Yield(true)
+	// The overlay comes back on top when the dialogs are answered, or
+	// after a while in any case: never leave it buried.
+	var once sync.Once
+	restore := func() { once.Do(func() { a.overlay.Yield(false) }) }
+	timer := time.AfterFunc(permissionTimeout, restore)
 	audio.RequestPermissions(func(ok bool) {
-		if a.overlay != nil {
-			a.overlay.Yield(false)
-		}
+		timer.Stop()
+		restore()
 		done(ok)
 	})
 }
+
+const permissionTimeout = 90 * time.Second

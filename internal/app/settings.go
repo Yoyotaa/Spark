@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"errors"
 	"runtime"
 	"strings"
@@ -288,4 +289,13 @@ func (a *App) GetLaunchAtLogin() bool { return startup.Enabled() }
 func (a *App) SetLaunchAtLogin(on bool) (bool, error) {
 	err := startup.Set(on)
 	return startup.Enabled(), err
+}
+
+// LogFrontend writes a frontend error to the terminal: JavaScript errors
+// are otherwise invisible in the overlay.
+func (a *App) LogFrontend(message string) {
+	if len(message) > 2000 {
+		message = message[:2000]
+	}
+	log.Printf("frontend: %s", message)
 }

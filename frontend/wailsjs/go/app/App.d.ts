@@ -33,6 +33,8 @@ export function ListNeuralVoices():Promise<Array<app.NeuralVoice>>;
 
 export function ListVoices():Promise<Array<audio.Voice>>;
 
+export function LogFrontend(arg1:string):Promise<void>;
+
 export function RequestMicPermission():Promise<app.MicStatus>;
 
 export function ResetSettings():Promise<app.SaveResult>;

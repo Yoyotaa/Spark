@@ -15,3 +15,4 @@ func (nopPlatform) setIgnoreMouse(bool)              {}
 func (nopPlatform) focus()                           {}
 func (nopPlatform) restoreFocus()                    {}
 func (nopPlatform) yield(bool)                       {}
+func (nopPlatform) ensureFront() int                 { return 0 }

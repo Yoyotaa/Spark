@@ -88,6 +88,9 @@ func New(env config.Env, settings *config.Store) *App {
 	a := &App{env: env, settings: settings, overlay: overlay.NewController(), vision: vision.New(vision.DefaultOptions)}
 	a.visible.Store(true)
 	a.overlay.OnToggle = func(ignoring bool) { a.debugf("overlay: click-through=%v", ignoring) }
+	a.overlay.OnRepair = func(what int) {
+		log.Printf("overlay: fenêtre remise au premier plan (niveau=%v, ordre=%v)", what&1 != 0, what&2 != 0)
+	}
 	return a
 }
 

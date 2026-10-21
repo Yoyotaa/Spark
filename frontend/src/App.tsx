@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react'
 import {Bubble, type BubbleContent} from './components/Bubble'
 import {ChatPanel, type Message} from './components/ChatPanel'
+import {Guard} from './components/Guard'
 import {Orb} from './components/Orb'
 import {SettingsPanel} from './components/settings/SettingsPanel'
 import {useDrag} from './hooks/useDrag'
@@ -166,6 +167,8 @@ export default function App() {
         setMessages((m) => [...m, {id: `user-${nextId++}`, from: 'user', text, at: new Date(), image: turn.capture, voice: true}])
         setWaiting(true)
         if (bubbleOn()) setBubble({kind: 'answer', turnId: turn.id, question: text, text: '', done: false, key: nextId++})
+        // (voice:turn now precedes the answer; the chat message keyed
+        // turn-<id> is created by the first delta.)
       }),
     [],
   )
@@ -304,6 +307,7 @@ export default function App() {
         <Orb size={size} open={chatOpen} speaking={speaking} listening={voiceState === 'listening'} handlers={drag} />
 
         <div className="absolute" style={place.panel}>
+          <Guard name="chat">
           <ChatPanel
             open={chatOpen}
             speaking={speaking}
@@ -320,16 +324,20 @@ export default function App() {
             onClose={() => setChatOpen(false)}
             toggleLabel={shortcutLabel(settings.hotkeys.toggleChat)}
           />
+          </Guard>
         </div>
 
         {bubble && !chatOpen && (
           <div className="absolute top-1/2 -translate-y-1/2" style={{left: place.bubbleLeft}}>
-            <Bubble key={bubble.key} content={bubble} speaking={speaking} side={place.side} />
+            <Guard name="bubble" key={bubble.key}>
+              <Bubble content={bubble} speaking={speaking} side={place.side} />
+            </Guard>
           </div>
         )}
       </div>
 
       {settingsOpen && (
+        <Guard name="settings">
         <SettingsPanel
           settings={settings}
           update={update}
@@ -346,6 +354,7 @@ export default function App() {
           onCleared={() => setMessages([])}
           onClose={() => setSettingsOpen(false)}
         />
+        </Guard>
       )}
     </main>
   )

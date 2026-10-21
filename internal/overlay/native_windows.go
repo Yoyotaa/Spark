@@ -59,6 +59,8 @@ type windowsPlatform struct {
 	hwnd  uintptr
 	scale float64        // physical px per CSS px
 	prev  atomic.Uintptr // foreground window before Spark took focus
+
+	yielding atomic.Bool
 }
 
 func newPlatform() platform { return &windowsPlatform{scale: 1} }
@@ -133,10 +135,21 @@ func (p *windowsPlatform) restoreFocus() {
 
 // yield drops the top-most flag while a system dialog must be reachable.
 func (p *windowsPlatform) yield(y bool) {
+	p.yielding.Store(y)
 	after := hwndTopmost
 	if y {
 		after = ^uintptr(1) // HWND_NOTOPMOST (-2)
 	}
 	const swpNoMove, swpNoSize = 0x0002, 0x0001
 	procSetWindowPos.Call(p.hwnd, after, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+}
+
+// ensureFront re-asserts the top-most position (games can steal it).
+func (p *windowsPlatform) ensureFront() int {
+	if p.yielding.Load() {
+		return 0
+	}
+	const swpNoMove, swpNoSize = 0x0002, 0x0001
+	procSetWindowPos.Call(p.hwnd, hwndTopmost, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+	return 0
 }

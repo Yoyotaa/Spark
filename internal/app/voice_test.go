@@ -313,3 +313,28 @@ func TestNotBusyAfterAnAnswer(t *testing.T) {
 	}
 	waitFor(t, "answer finished", func() bool { return !a.busy() })
 }
+
+// The UI creates the answer bubble on voice:turn: it must come before the
+// first streamed token, or the bubble misses it and stays on "ANALYSE".
+func TestVoiceTurnBeforeFirstToken(t *testing.T) {
+	a, _, _, rec := newVoiceApp(t, config.Defaults().Mic)
+	a.voice.pressPTT()
+	a.voice.releasePTT()
+	a.voice.onFinal("Que vois-tu ?")
+	waitFor(t, "answer streamed", func() bool { return rec.has(EventDelta) })
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	turn, delta := -1, -1
+	for i, e := range rec.events {
+		if e == EventVoiceTurn && turn < 0 {
+			turn = i
+		}
+		if e == EventDelta && delta < 0 {
+			delta = i
+		}
+	}
+	if turn < 0 || turn > delta {
+		t.Fatalf("voice:turn at %d, first delta at %d: %v", turn, delta, rec.events)
+	}
+}
