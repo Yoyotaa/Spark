@@ -28,6 +28,7 @@ type Props = {
   onToggleScreen: () => void
   onOpenSettings: () => void
   onStop: () => void
+  onNewChat: () => void
   onClose: () => void
   toggleLabel: string
 }
@@ -63,6 +64,25 @@ function Thumbnail({capture}: {capture: Capture}) {
   )
 }
 
+function CopyButton({text}: {text: string}) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+      title="Copier la réponse"
+      className="absolute top-0 right-0 font-mono text-[9px] tracking-[0.15em] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-spark-cyan"
+    >
+      {copied ? 'COPIÉ ✓' : 'COPIER'}
+    </button>
+  )
+}
+
 // Stays mounted while closed so the conversation and scroll survive;
 // `hidden` removes it from the layout, hence from the interactive regions.
 export function ChatPanel({
@@ -78,6 +98,7 @@ export function ChatPanel({
   onToggleScreen,
   onOpenSettings,
   onStop,
+  onNewChat,
   onClose,
   toggleLabel,
 }: Props) {
@@ -133,6 +154,16 @@ export function ChatPanel({
         )}
         <kbd className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-400">{toggleLabel}</kbd>
         <button
+          onClick={onNewChat}
+          aria-label="Nouvelle conversation"
+          title="Nouvelle conversation (A.R.I.A oublie le contexte)"
+          className="grid size-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-100"
+        >
+          <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+            <path d="M10 4v12M4 10h12" />
+          </svg>
+        </button>
+        <button
           onClick={onOpenSettings}
           aria-label="Paramètres"
           title="Paramètres"
@@ -157,7 +188,8 @@ export function ChatPanel({
       <ol ref={list} className="hud-scroll flex-1 space-y-4 overflow-y-auto px-4 py-4 select-text">
         {messages.map((m) =>
           m.from === 'aria' ? (
-            <li key={m.id} className="relative pl-3.5">
+            <li key={m.id} className="group relative pl-3.5">
+              {!m.streaming && !m.error && <CopyButton text={m.text} />}
               <span
                 className={`absolute top-1 bottom-1 left-0 w-px bg-gradient-to-b ${
                   m.error ? 'from-rose-400 to-rose-400/20' : 'from-spark-cyan to-spark-violet/30'

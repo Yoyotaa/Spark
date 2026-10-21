@@ -354,6 +354,12 @@ export default function App() {
             onToggleScreen={() => setSeeScreen((v) => !v)}
             onOpenSettings={() => setSettingsOpen(true)}
             onStop={bridge.interrupt}
+            onNewChat={() => {
+              bridge.interrupt()
+              bridge.clearConversation()
+              setMessages([])
+              setWaiting(false)
+            }}
             onClose={() => setChatOpen(false)}
             toggleLabel={shortcutLabel(settings.hotkeys.toggleChat)}
           />
