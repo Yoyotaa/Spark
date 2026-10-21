@@ -1,0 +1,85 @@
+name: release
+
+# Push a tag (git tag v0.2.0 && git push origin v0.2.0) to build and
+# publish the macOS app and the Windows installer.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin/universal
+          - os: windows-latest
+            platform: windows/amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis -y
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Set version
+        id: version
+        shell: bash
+        run: echo "ldflags=$(node scripts/set-version.mjs '${{ github.ref_name }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          wails build -clean -platform ${{ matrix.platform }} -ldflags "${{ steps.version.outputs.ldflags }}"
+          ditto -c -k --keepParent build/bin/spark.app "Spark-${{ github.ref_name }}-macOS.zip"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          wails build -clean -nsis -platform ${{ matrix.platform }} -ldflags "${{ steps.version.outputs.ldflags }}"
+          mv build/bin/*-installer.exe "Spark-${{ github.ref_name }}-Windows-setup.exe"
+          mv build/bin/spark.exe "Spark-${{ github.ref_name }}-Windows-portable.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spark-${{ runner.os }}
+          path: Spark-*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=docs/releases/${{ github.ref_name }}.md
+          [ -f "$notes" ] || notes=/dev/null
+          gh release create "${{ github.ref_name }}" dist/* --title "Spark ${{ github.ref_name }}" --notes-file "$notes"
