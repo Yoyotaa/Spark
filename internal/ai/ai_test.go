@@ -165,6 +165,16 @@ func TestGeminiFallsBackWhenSaturated(t *testing.T) {
 	if from != "primary" || to != FallbackGeminiModel || fmt.Sprint(models) != "[primary "+FallbackGeminiModel+"]" {
 		t.Fatalf("fallback %s -> %s, calls %v", from, to, models)
 	}
+
+	// While the quota cools down, the saturated model is not retried.
+	ch, err = g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "y"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	if fmt.Sprint(models) != "[primary "+FallbackGeminiModel+" "+FallbackGeminiModel+"]" {
+		t.Fatalf("second question should go straight to the fallback, calls %v", models)
+	}
 }
 
 func TestGeminiNoFallbackOnRealErrors(t *testing.T) {

@@ -49,7 +49,17 @@ type Gemini struct {
 	// (timeout, 503, 429). OnFallback, if set, is told about it.
 	fallback   string
 	OnFallback func(from, to string, reason error)
+	// skipUntil (unix nanos): the primary model is known to be saturated,
+	// go straight to the fallback instead of wasting a round trip.
+	skipUntil atomic.Int64
 }
+
+// How long a saturated model is skipped: quotas reset per minute, queues
+// clear faster.
+const (
+	quotaCooldown = 60 * time.Second
+	busyCooldown  = 30 * time.Second
+)
 
 // NewGemini creates a client; empty model and baseURL select the defaults.
 // thinking is the thinking level ("low" recommended: on screenshots the
@@ -163,17 +173,29 @@ func (g *Gemini) Stream(ctx context.Context, system string, history []Message) (
 }
 
 // errSaturated wraps the failures that justify trying the fallback model.
-type errSaturated struct{ err error }
+type errSaturated struct {
+	err   error
+	quota bool // 429: per-minute quota exhausted
+}
 
 func (e errSaturated) Error() string { return e.err.Error() }
 func (e errSaturated) Unwrap() error { return e.err }
 
 func (g *Gemini) post(ctx context.Context, system string, history []Message) (*http.Response, error) {
+	canFallback := g.fallback != "" && g.fallback != g.model
+	if canFallback && time.Now().UnixNano() < g.skipUntil.Load() {
+		return g.postModel(ctx, g.fallback, system, history)
+	}
 	resp, err := g.postModel(ctx, g.model, system, history)
 	var sat errSaturated
-	if err == nil || !errors.As(err, &sat) || g.fallback == "" || g.fallback == g.model || ctx.Err() != nil {
+	if err == nil || !errors.As(err, &sat) || !canFallback || ctx.Err() != nil {
 		return resp, err
 	}
+	cooldown := busyCooldown
+	if sat.quota {
+		cooldown = quotaCooldown
+	}
+	g.skipUntil.Store(time.Now().Add(cooldown).UnixNano())
 	if g.OnFallback != nil {
 		g.OnFallback(g.model, g.fallback, err)
 	}
@@ -200,7 +222,7 @@ func (g *Gemini) postModel(ctx context.Context, model, system string, history []
 		case err != nil && ctx.Err() != nil:
 			return nil, ctx.Err()
 		case err != nil && isTimeout(err):
-			return nil, errSaturated{fmt.Errorf("%s ne répond pas (modèle saturé) : réessaie ou choisis un autre modèle dans les paramètres", model)}
+			return nil, errSaturated{err: fmt.Errorf("%s ne répond pas (modèle saturé) : réessaie ou choisis un autre modèle dans les paramètres", model)}
 		case err != nil:
 			return nil, fmt.Errorf("Gemini injoignable : %w", err)
 		case resp.StatusCode == http.StatusOK:
@@ -226,7 +248,7 @@ func (g *Gemini) postModel(ctx context.Context, model, system string, history []
 		}
 		err = friendlyError(resp.StatusCode, apiErr)
 		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
-			err = errSaturated{err}
+			err = errSaturated{err: err, quota: resp.StatusCode == http.StatusTooManyRequests}
 		}
 		return nil, err
 	}
