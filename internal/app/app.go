@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -71,6 +74,9 @@ type App struct {
 	// emitFn replaces the Wails event bus in tests.
 	emitFn func(event string, data ...any)
 	emitMu sync.Mutex
+	// closing: the webview is being torn down. Events sent then reach a
+	// dead WKWebView and crash in Wails' ExecJS (seen when quitting).
+	closing atomic.Bool
 }
 
 // emit sends an event to the frontend. Serialized: events come from many
@@ -78,6 +84,9 @@ type App struct {
 func (a *App) emit(event string, data ...any) {
 	a.emitMu.Lock()
 	defer a.emitMu.Unlock()
+	if a.closing.Load() {
+		return
+	}
 	if a.emitFn != nil {
 		a.emitFn(event, data...)
 		return
@@ -97,6 +106,14 @@ func New(env config.Env, settings *config.Store) *App {
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	// Ctrl+C / SIGTERM (wails dev): stop emitting before Wails tears the
+	// webview down. Wails handles the signal too and quits the app.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		a.beginClose()
+	}()
 	// Created here rather than in New: Wails also runs New when generating
 	// bindings, where listing the system voices is wasted work.
 	a.tts = audio.NewSystemTTS()
@@ -116,10 +133,26 @@ func (a *App) DomReady(context.Context) {
 	go a.proactiveLoop(a.ctx)
 }
 
+// BeforeClose runs first when the app quits: stop talking to the webview
+// and stop the background work right away.
+func (a *App) BeforeClose(context.Context) (prevent bool) {
+	a.beginClose()
+	return false
+}
+
 // Shutdown only cancels: it must not wait on goroutines that may be
 // dispatching to the main thread, which is the one calling Shutdown.
 func (a *App) Shutdown(context.Context) {
-	a.cancel()
+	a.beginClose()
+}
+
+func (a *App) beginClose() {
+	a.emitMu.Lock() // no event in flight past this point
+	a.closing.Store(true)
+	a.emitMu.Unlock()
+	if a.cancel != nil {
+		a.cancel()
+	}
 }
 
 func (a *App) debugf(format string, args ...any) {

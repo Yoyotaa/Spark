@@ -46,6 +46,7 @@ func main() {
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        a.Startup,
 		OnDomReady:       a.DomReady,
+		OnBeforeClose:    a.BeforeClose,
 		OnShutdown:       a.Shutdown,
 		Bind:             []any{a},
 		Mac: &mac.Options{
