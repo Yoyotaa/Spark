@@ -38,7 +38,11 @@ jobs:
 
       - name: Install NSIS
         if: runner.os == 'Windows'
-        run: choco install nsis -y
+        shell: bash
+        run: |
+          choco install nsis -y
+          # Chocolatey does not put makensis on the PATH.
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
 
       - name: Test
         run: go test ./internal/...
@@ -58,6 +62,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          makensis -VERSION # fail early if NSIS is missing
           wails build -clean -nsis -platform ${{ matrix.platform }} -ldflags "${{ steps.version.outputs.ldflags }}"
           mv build/bin/*-installer.exe "Spark-${{ github.ref_name }}-Windows-setup.exe"
           mv build/bin/spark.exe "Spark-${{ github.ref_name }}-Windows-portable.exe"
