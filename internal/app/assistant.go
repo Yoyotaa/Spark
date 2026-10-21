@@ -150,9 +150,12 @@ func (a *App) askWith(text string, withScreen bool, frame *vision.Frame, capt *C
 	// From here, every exit must end with finish(done).
 	interrupted := func() bool { return ctx.Err() != nil && a.ctx.Err() == nil }
 	fail := func(e error) (Turn, error) {
+		// Decide before cancelling: cancel() makes ctx.Err() non-nil, which
+		// would pass every failure off as an interruption.
+		superseded := interrupted()
 		cancel()
 		a.finish(done)
-		if interrupted() {
+		if superseded {
 			// Superseded by a newer question: not an error for the user.
 			return Turn{ID: turn.ID, Interrupted: true}, nil
 		}

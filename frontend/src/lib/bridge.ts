@@ -2,7 +2,7 @@
 // plain browser (`npm run dev`) where window.go does not exist.
 import * as App from '../../wailsjs/go/app/App'
 import type {app, config, overlay} from '../../wailsjs/go/models'
-import {EventsOn} from '../../wailsjs/runtime/runtime'
+import {BrowserOpenURL, EventsOn} from '../../wailsjs/runtime/runtime'
 import {DEFAULTS, type Provider, type Settings} from './settings'
 
 const inWails = typeof window !== 'undefined' && 'go' in window
@@ -206,7 +206,7 @@ export const onSpeaking = (cb: (speaking: boolean) => void) => on(EventSpeaking,
 // ---- Voice -----------------------------------------------------------------
 
 export type VoiceState = 'idle' | 'listening' | 'transcribing'
-export type VoiceTurn = {text: string; turn: Turn}
+export type VoiceTurn = {text: string; turn: Turn; source?: 'voice' | 'quick'}
 export type MicStatus = {mic: 'unknown' | 'denied' | 'granted'; speech: 'unknown' | 'denied' | 'granted'; engine: string; live: boolean}
 
 export const onVoiceState = (cb: (s: VoiceState) => void) => on(EventVoiceState, cb)
@@ -281,4 +281,20 @@ export function logFrontend(message: string): void {
 /** Closes Spark. */
 export function quit(): void {
   if (inWails) void App.Quit()
+}
+
+// ---- Updates ---------------------------------------------------------------
+
+export type Release = {version: string; url: string}
+
+/** A newer release was found at launch. */
+export const onUpdate = (cb: (r: Release) => void) => on('spark:update', cb)
+
+export async function getUpdate(): Promise<Release | null> {
+  return inWails ? ((await App.GetUpdate()) as Release | null) : null
+}
+
+export function openURL(url: string): void {
+  if (inWails) BrowserOpenURL(url)
+  else window.open(url, '_blank')
 }

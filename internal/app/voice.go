@@ -27,6 +27,8 @@ const (
 type VoiceTurn struct {
 	Text string `json:"text"`
 	Turn Turn   `json:"turn"`
+	// Source: "voice" (spoken question) or "quick" (quick-look hotkey).
+	Source string `json:"source"`
 }
 
 const (
@@ -401,7 +403,7 @@ func (v *voice) onFinal(text string) {
 	// The UI must know about the question before the first answer token
 	// (the answer starts streaming before ask returns).
 	_, err := v.a.askThen(text, false, frame, capt, func(t Turn) {
-		v.a.emit(EventVoiceTurn, VoiceTurn{Text: text, Turn: t})
+		v.a.emit(EventVoiceTurn, VoiceTurn{Text: text, Turn: t, Source: "voice"})
 	})
 	if err != nil {
 		v.onError(err)

@@ -38,6 +38,10 @@ export function GetSettings() {
   return window['go']['app']['App']['GetSettings']();
 }
 
+export function GetUpdate() {
+  return window['go']['app']['App']['GetUpdate']();
+}
+
 export function Interrupt() {
   return window['go']['app']['App']['Interrupt']();
 }
@@ -60,6 +64,10 @@ export function ListVoices() {
 
 export function LogFrontend(arg1) {
   return window['go']['app']['App']['LogFrontend'](arg1);
+}
+
+export function QuickLook() {
+  return window['go']['app']['App']['QuickLook']();
 }
 
 export function Quit() {

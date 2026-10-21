@@ -37,7 +37,7 @@ export type Settings = {
     wakePhrase: string
     cues: boolean
   }
-  hotkeys: {toggleChat: Shortcut; toggleVisible: Shortcut; openSettings: Shortcut}
+  hotkeys: {toggleChat: Shortcut; toggleVisible: Shortcut; openSettings: Shortcut; quickLook: Shortcut}
   appearance: {
     accent: Accent
     orbSize: 'small' | 'medium' | 'large'
@@ -45,7 +45,7 @@ export type Settings = {
     reduceMotion: boolean
     showBubbles: boolean
   }
-  advanced: {debug: boolean; pollHz: number}
+  advanced: {debug: boolean; pollHz: number; checkUpdates: boolean}
 }
 
 const sc = (key: string, mods: Partial<Shortcut> = {}): Shortcut => ({
@@ -87,9 +87,10 @@ export const DEFAULTS: Settings = {
     toggleChat: sc('A', {alt: true, shift: true}),
     toggleVisible: sc('H', {alt: true, shift: true}),
     openSettings: sc('P', {alt: true, shift: true}),
+    quickLook: sc('D', {alt: true, shift: true}),
   },
   appearance: {accent: 'cyan', orbSize: 'medium', panelOpacity: 82, reduceMotion: false, showBubbles: true},
-  advanced: {debug: false, pollHz: 60},
+  advanced: {debug: false, pollHz: 60, checkUpdates: true},
 }
 
 export const DEFAULT_MODELS: Record<Provider, string> = {

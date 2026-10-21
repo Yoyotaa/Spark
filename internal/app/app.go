@@ -23,6 +23,7 @@ import (
 	"spark/internal/hotkey"
 	"spark/internal/overlay"
 	"spark/internal/tray"
+	"spark/internal/update"
 	"spark/internal/vision"
 )
 
@@ -32,6 +33,7 @@ const (
 	EventVisibility   = "spark:visibility"
 	EventOpenSettings = "spark:open-settings"
 	EventPermission   = "spark:permission" // bool, an OS permission dialog is pending
+	EventUpdate       = "spark:update"     // update.Release, a newer version exists
 	EventSay          = "aria:say"         // text A.R.I.A is saying
 	EventSpeaking     = "aria:speaking"    // bool, voice playing
 	EventDelta        = "aria:delta"       // Delta, streamed answer text
@@ -60,6 +62,7 @@ type App struct {
 	llmErr    error       // why llm is nil
 	hotkeys   *hotkey.Listener
 	hotkeyErr error
+	update    *update.Release // newer version found at launch
 
 	// Conversation state, see assistant.go.
 	askMu     sync.Mutex
@@ -135,6 +138,7 @@ func (a *App) DomReady(context.Context) {
 
 	err := tray.Start("Spark — A.R.I.A", []tray.Item{
 		{Title: "Parler à A.R.I.A", Action: a.toggleChat},
+		{Title: "Coup d'œil sur l'écran", Action: a.QuickLook},
 		{Title: "Afficher / masquer Spark", Action: a.toggleVisible},
 		{Title: "Paramètres…", Action: a.openSettings},
 		{},
@@ -143,6 +147,7 @@ func (a *App) DomReady(context.Context) {
 	if err != nil {
 		log.Printf("tray: %v", err)
 	}
+	go a.checkUpdate()
 }
 
 // BeforeClose runs first when the app quits: stop talking to the webview
@@ -272,7 +277,7 @@ func (a *App) registerHotkeys() {
 	for _, b := range []struct {
 		s  config.Shortcut
 		fn func()
-	}{{h.ToggleChat, a.toggleChat}, {h.ToggleVisible, a.toggleVisible}, {h.OpenSettings, a.openSettings}} {
+	}{{h.ToggleChat, a.toggleChat}, {h.ToggleVisible, a.toggleVisible}, {h.OpenSettings, a.openSettings}, {h.QuickLook, a.QuickLook}} {
 		if b.s.Key != "" {
 			bindings = append(bindings, hotkey.Binding{Mod: modifiers(b.s), Key: hotkey.Key(b.s.Key), Fn: b.fn})
 		}
@@ -403,6 +408,22 @@ func (a *App) speakAll(ctx context.Context, sentences <-chan string) {
 // out letter by letter.
 func spoken(text string) string {
 	return strings.ReplaceAll(text, "A.R.I.A", "Aria")
+}
+
+// QuickLook asks A.R.I.A about the screen without speaking or typing
+// (hotkey, menu bar): the answer shows in the bubble and is read aloud.
+func (a *App) QuickLook() {
+	a.debugf("hotkey: quick look")
+	if !a.visible.Load() {
+		a.setVisible(true)
+	}
+	q := defaultQuestion[a.current().AI.Language]
+	_, err := a.askThen(q, true, nil, nil, func(t Turn) {
+		a.emit(EventVoiceTurn, VoiceTurn{Text: q, Turn: t, Source: "quick"})
+	})
+	if err != nil {
+		a.emit(EventVoiceError, err.Error())
+	}
 }
 
 // Quit closes Spark (menu bar icon, settings).

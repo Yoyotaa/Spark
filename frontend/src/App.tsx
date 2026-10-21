@@ -107,6 +107,17 @@ export default function App() {
     if (!settingsOpen) void bridge.getAIStatus().then((s) => setAiReady(s.ready))
   }, [settingsOpen])
 
+  // First launch (no AI configured): open the settings on the AI section,
+  // with a welcome, rather than letting questions fail.
+  const onboarded = useRef(false)
+  useEffect(() => {
+    if (!loaded || onboarded.current) return
+    onboarded.current = true
+    void bridge.getAIStatus().then((s) => {
+      if (!s.ready) setSettingsOpen(true)
+    })
+  }, [loaded])
+
   useEffect(() => bridge.onToggleChat(() => setChatOpen((o) => !o)), [])
   useEffect(() => bridge.onOpenSettings(() => setSettingsOpen(true)), [])
   useEffect(() => bridge.onPermission(setPermissionPending), [])
@@ -133,6 +144,16 @@ export default function App() {
     [],
   )
   useEffect(() => bridge.onSpeaking(setSpeaking), [])
+
+  // A newer version exists: say it once, quietly (not read aloud).
+  useEffect(
+    () =>
+      bridge.onUpdate((r) => {
+        if (showBubblesRef.current)
+          setBubble({kind: 'say', text: `Spark ${r.version} est disponible : Paramètres › À propos.`, key: nextId++})
+      }),
+    [],
+  )
 
   // ---- Voice -----------------------------------------------------------------
   const bubbleOn = () => !chatOpenRef.current && showBubblesRef.current
@@ -164,9 +185,9 @@ export default function App() {
   )
   useEffect(
     () =>
-      bridge.onVoiceTurn(({text, turn}) => {
+      bridge.onVoiceTurn(({text, turn, source}) => {
         setPartial('')
-        setMessages((m) => [...m, {id: `user-${nextId++}`, from: 'user', text, at: new Date(), image: turn.capture, voice: true}])
+        setMessages((m) => [...m, {id: `user-${nextId++}`, from: 'user', text, at: new Date(), image: turn.capture, voice: source !== 'quick'}])
         setWaiting(true)
         if (bubbleOn()) setBubble({kind: 'answer', turnId: turn.id, question: text, text: '', done: false, key: nextId++})
         // (voice:turn now precedes the answer; the chat message keyed

@@ -258,6 +258,7 @@ export namespace config {
 	export class AdvancedSettings {
 	    debug: boolean;
 	    pollHz: number;
+	    checkUpdates: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AdvancedSettings(source);
@@ -267,6 +268,7 @@ export namespace config {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.debug = source["debug"];
 	        this.pollHz = source["pollHz"];
+	        this.checkUpdates = source["checkUpdates"];
 	    }
 	}
 	export class AppearanceSettings {
@@ -313,6 +315,7 @@ export namespace config {
 	    toggleChat: Shortcut;
 	    toggleVisible: Shortcut;
 	    openSettings: Shortcut;
+	    quickLook: Shortcut;
 	
 	    static createFrom(source: any = {}) {
 	        return new HotkeySettings(source);
@@ -323,6 +326,7 @@ export namespace config {
 	        this.toggleChat = this.convertValues(source["toggleChat"], Shortcut);
 	        this.toggleVisible = this.convertValues(source["toggleVisible"], Shortcut);
 	        this.openSettings = this.convertValues(source["openSettings"], Shortcut);
+	        this.quickLook = this.convertValues(source["quickLook"], Shortcut);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -524,6 +528,25 @@ export namespace overlay {
 	        this.y = source["y"];
 	        this.w = source["w"];
 	        this.h = source["h"];
+	    }
+	}
+
+}
+
+export namespace update {
+	
+	export class Release {
+	    version: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Release(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.url = source["url"];
 	    }
 	}
 

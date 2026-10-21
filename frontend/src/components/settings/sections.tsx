@@ -1,6 +1,6 @@
 import {useEffect, useId, useRef, useState} from 'react'
 import * as bridge from '../../lib/bridge'
-import type {AIStatus, AppInfo, MicStatus, NeuralVoice, TestResult, Voice} from '../../lib/bridge'
+import type {AIStatus, AppInfo, MicStatus, NeuralVoice, Release, TestResult, Voice} from '../../lib/bridge'
 import {ACCENTS, DEFAULT_MODELS, MODEL_HINTS, type Accent, type Provider, type Settings} from '../../lib/settings'
 import {Badge, Button, Group, inputClass, Row, Segmented, Select, SecretField, ShortcutRecorder, Slider, Toggle} from './controls'
 
@@ -58,6 +58,15 @@ export function AISection({s, update, status, onStatus}: SectionProps & {status:
 
   return (
     <div className="space-y-6">
+      {status && !status.ready && !Object.values(status.keys).some((k) => k.source) && (
+        <div className="rounded-xl border border-spark-cyan/30 bg-gradient-to-br from-spark-cyan/[0.10] to-spark-violet/[0.08] px-4 py-3.5">
+          <div className="text-[13.5px] font-semibold text-slate-50">Bienvenue dans Spark ✦</div>
+          <p className="mt-1 text-[12px] leading-relaxed text-slate-300">
+            Pour qu’A.R.I.A puisse voir ton écran et te répondre, choisis un fournisseur d’IA et colle sa clé ci-dessous. Gemini propose
+            une clé gratuite en une minute sur <span className="font-mono text-slate-100">aistudio.google.com/apikey</span>.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-2.5">
         {PROVIDERS.map((x) => {
           const active = x.id === p
@@ -609,6 +618,7 @@ export function HotkeysSection({s, update, hotkeyError}: SectionProps & {hotkeyE
     {k: 'toggleChat', label: 'Ouvrir / fermer A.R.I.A', help: 'Prend le focus clavier, le rend à l’app précédente à la fermeture.'},
     {k: 'toggleVisible', label: 'Masquer / afficher Spark', help: 'Masqué, Spark laisse passer tous les clics et ne consomme plus rien.'},
     {k: 'openSettings', label: 'Ouvrir les paramètres', help: undefined},
+    {k: 'quickLook', label: 'Coup d’œil sur l’écran', help: 'A.R.I.A décrit l’écran et conseille, sans parler ni écrire.'},
   ] as const
   return (
     <div className="space-y-6">
@@ -784,6 +794,11 @@ export function AdvancedSection({s, update, onReset}: SectionProps & {onReset: (
           />
         </Row>
       </Group>
+      <Group title="Mises à jour">
+        <Row label="Vérifier les mises à jour" help="Au lancement, Spark demande à GitHub si une nouvelle version existe (aucune autre donnée envoyée).">
+          <Toggle label="Mises à jour" checked={s.advanced.checkUpdates} onChange={(v) => update((d) => void (d.advanced.checkUpdates = v))} />
+        </Row>
+      </Group>
       <Group title="Développement">
         <Row label="Mode debug" help="Journal détaillé dans le terminal et zones cliquables entourées en jaune.">
           <Toggle label="Debug" checked={s.advanced.debug} onChange={(v) => update((d) => void (d.advanced.debug = v))} />
@@ -811,11 +826,23 @@ export function AdvancedSection({s, update, onReset}: SectionProps & {onReset: (
 
 export function AboutSection() {
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [release, setRelease] = useState<Release | null>(null)
   useEffect(() => {
     void bridge.getAppInfo().then(setInfo)
+    void bridge.getUpdate().then(setRelease)
   }, [])
   return (
     <div className="space-y-6">
+      {release && (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-spark-cyan/30 bg-spark-cyan/[0.07] px-4 py-3">
+          <span className="text-[12.5px] text-slate-100">
+            Spark <span className="font-mono text-spark-cyan">{release.version}</span> est disponible.
+          </span>
+          <Button variant="primary" onClick={() => bridge.openURL(release.url)}>
+            Télécharger
+          </Button>
+        </div>
+      )}
       <Group>
         <Row label="Version">
           <span className="font-mono text-[12px] text-slate-300">{info?.version}</span>

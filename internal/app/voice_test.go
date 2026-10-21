@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -337,4 +338,31 @@ func TestVoiceTurnBeforeFirstToken(t *testing.T) {
 	if turn < 0 || turn > delta {
 		t.Fatalf("voice:turn at %d, first delta at %d: %v", turn, delta, rec.events)
 	}
+}
+
+// failingLLM rejects every request (quota, bad key...).
+type failingLLM struct{}
+
+func (failingLLM) Name() string                                 { return "failing" }
+func (failingLLM) ListModels(context.Context) ([]string, error) { return nil, nil }
+func (failingLLM) Stream(context.Context, string, []ai.Message) (<-chan ai.Chunk, error) {
+	return nil, errors.New("quota atteint")
+}
+
+// A real failure must reach the user, not pass for an interruption.
+func TestAskReportsErrors(t *testing.T) {
+	a, _, _, rec := newVoiceApp(t, config.Defaults().Mic)
+	a.llm = failingLLM{}
+	turn, err := a.Ask("Bonjour", false)
+	if err == nil || turn.Interrupted {
+		t.Fatalf("got turn %+v, err %v: the error was swallowed", turn, err)
+	}
+	if a.busy() {
+		t.Fatal("a failed question must not leave the app busy")
+	}
+
+	a.voice.pressPTT()
+	a.voice.releasePTT()
+	a.voice.onFinal("Que vois-tu ?")
+	waitFor(t, "voice error reported", func() bool { return rec.has(EventVoiceError) })
 }

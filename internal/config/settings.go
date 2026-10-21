@@ -111,6 +111,7 @@ type HotkeySettings struct {
 	ToggleChat    Shortcut `json:"toggleChat"`
 	ToggleVisible Shortcut `json:"toggleVisible"`
 	OpenSettings  Shortcut `json:"openSettings"`
+	QuickLook     Shortcut `json:"quickLook"` // "what do you see?" without speaking
 }
 
 type AppearanceSettings struct {
@@ -122,8 +123,9 @@ type AppearanceSettings struct {
 }
 
 type AdvancedSettings struct {
-	Debug  bool `json:"debug"`
-	PollHz int  `json:"pollHz"` // cursor polling for click-through
+	Debug        bool `json:"debug"`
+	PollHz       int  `json:"pollHz"`       // cursor polling for click-through
+	CheckUpdates bool `json:"checkUpdates"` // ask GitHub for a newer release
 }
 
 // DefaultModels are the models selected when the user has not picked one.
@@ -166,9 +168,10 @@ func Defaults() Settings {
 			ToggleChat:    Shortcut{Key: "A", Alt: true, Shift: true},
 			ToggleVisible: Shortcut{Key: "H", Alt: true, Shift: true},
 			OpenSettings:  Shortcut{Key: "P", Alt: true, Shift: true},
+			QuickLook:     Shortcut{Key: "D", Alt: true, Shift: true},
 		},
 		Appearance: AppearanceSettings{Accent: "cyan", OrbSize: "medium", PanelOpacity: 82, ShowBubbles: true},
-		Advanced:   AdvancedSettings{PollHz: 60},
+		Advanced:   AdvancedSettings{PollHz: 60, CheckUpdates: true},
 	}
 }
 
@@ -267,6 +270,7 @@ func (s Settings) Normalize() Settings {
 	s.Hotkeys.ToggleChat = s.Hotkeys.ToggleChat.normalized()
 	s.Hotkeys.ToggleVisible = s.Hotkeys.ToggleVisible.normalized()
 	s.Hotkeys.OpenSettings = s.Hotkeys.OpenSettings.normalized()
+	s.Hotkeys.QuickLook = s.Hotkeys.QuickLook.normalized()
 
 	s.Appearance.Accent = oneOf(s.Appearance.Accent, []string{"cyan", "violet", "emerald", "amber", "rose"}, d.Appearance.Accent)
 	s.Appearance.OrbSize = oneOf(s.Appearance.OrbSize, []string{"small", "medium", "large"}, d.Appearance.OrbSize)

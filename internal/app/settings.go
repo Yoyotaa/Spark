@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
 	"runtime"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"spark/internal/config"
 	"spark/internal/hotkey"
 	"spark/internal/startup"
+	"spark/internal/update"
 )
 
 // GetSettings returns the persisted user preferences.
@@ -298,4 +300,32 @@ func (a *App) LogFrontend(message string) {
 		message = message[:2000]
 	}
 	log.Printf("frontend: %s", message)
+}
+
+// checkUpdate asks GitHub once per launch whether a newer release exists.
+func (a *App) checkUpdate() {
+	if Version == "dev" || !a.current().Advanced.CheckUpdates {
+		return
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	r, err := update.Latest(ctx, http.DefaultClient, "")
+	if err != nil {
+		a.debugf("update: %v", err)
+		return
+	}
+	if update.Newer(r.Version, Version) {
+		log.Printf("update: version %s disponible (%s)", r.Version, r.URL)
+		a.mu.Lock()
+		a.update = &r
+		a.mu.Unlock()
+		a.emit(EventUpdate, r)
+	}
+}
+
+// GetUpdate returns the newer release found at launch, if any.
+func (a *App) GetUpdate() *update.Release {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.update
 }
