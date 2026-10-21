@@ -158,3 +158,7 @@ func register(bindings []Binding) (*Listener, error) {
 		unregister()
 	}}, nil
 }
+
+// runMainLoop services the main dispatch queue (tests only: in the app,
+// AppKit's run loop does it). Must be called on the main OS thread.
+func runMainLoop() { C.sparkRunMainLoop() }

@@ -26,6 +26,10 @@ export function GetAppInfo() {
   return window['go']['app']['App']['GetAppInfo']();
 }
 
+export function GetLaunchAtLogin() {
+  return window['go']['app']['App']['GetLaunchAtLogin']();
+}
+
 export function GetMicStatus() {
   return window['go']['app']['App']['GetMicStatus']();
 }
@@ -76,6 +80,10 @@ export function SetInteractiveRegions(arg1) {
 
 export function SetKeyboardFocus(arg1) {
   return window['go']['app']['App']['SetKeyboardFocus'](arg1);
+}
+
+export function SetLaunchAtLogin(arg1) {
+  return window['go']['app']['App']['SetLaunchAtLogin'](arg1);
 }
 
 export function SetMicTest(arg1) {

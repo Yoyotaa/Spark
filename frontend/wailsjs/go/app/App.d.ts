@@ -17,6 +17,8 @@ export function GetAIStatus():Promise<app.AIStatus>;
 
 export function GetAppInfo():Promise<app.AppInfo>;
 
+export function GetLaunchAtLogin():Promise<boolean>;
+
 export function GetMicStatus():Promise<app.MicStatus>;
 
 export function GetSettings():Promise<config.Settings>;
@@ -42,6 +44,8 @@ export function SetAPIKey(arg1:string,arg2:string):Promise<app.AIStatus>;
 export function SetInteractiveRegions(arg1:Array<overlay.Rect>):Promise<void>;
 
 export function SetKeyboardFocus(arg1:boolean):Promise<void>;
+
+export function SetLaunchAtLogin(arg1:boolean):Promise<boolean>;
 
 export function SetMicTest(arg1:boolean):Promise<void>;
 

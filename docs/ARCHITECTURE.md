@@ -17,7 +17,7 @@ l'utilisateur via A.R.I.A. Cibles : **macOS** et **Windows**.
 │ internal/overlay  Fenêtre transparente + click-through natif   ✅ POC              │
 │ internal/vision   Capture d'écran (pool de buffers, JPEG, base64)   ✅             │
 │ internal/ai       LLM multimodal streamé : Gemini, Claude, OpenAI-compatible  ✅      │
-│ internal/audio    STT (commandes vocales) / TTS (voix d'A.R.I.A)    phase 4        │
+│ internal/audio    Micro, reconnaissance vocale, voix, lecteur PCM   ✅             │
 │ internal/config   Paramètres persistants, clés API (trousseau), overrides d'env     │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -165,23 +165,57 @@ question ─► capture (≈110-200 ms) ─► Gemini streamGenerateContent (SSE
 - **Test sans clé** : `SPARK_LLM_BASE_URL` pointe le client vers un faux
   serveur local ; `go test ./internal/ai` couvre SSE, erreurs et repli.
 
-### Prochaine étape : la voix (phase 4)
+## Micro et voix
 
-Push-to-talk : une touche maintenue enregistre le micro, la capture est prise
-à l'appui (la situation au moment où tu parles). Au relâchement, l'audio et
-l'image partent **dans la même requête** : Gemini comprend directement la
-parole, sans module de transcription séparé, ce qui économise un aller-retour.
-Le mode « toujours à l'écoute » (Gemini Live API, voix native) viendra après :
-il envoie le micro en continu, ce qui pose plus de questions de vie privée et
-de quota.
+```
+touche ↓ / voix détectée ─► capture d'écran (en parallèle)
+          │
+          ▼ micro (AVAudioEngine | waveIn) ─► reconnaissance ─► texte ─► IA
+                                              (Apple, en direct | Gemini)
+```
 
-## Pistes de performance déjà prévues
-- **IA** : streaming des tokens vers l'interface **et** vers la synthèse vocale,
-  phrase par phrase : A.R.I.A commence à parler avant la fin de la génération.
-- **Audio** : push-to-talk d'abord (pas de micro ouvert en permanence), trames
-  PCM transmises par channels.
-- **React** : peu d'état global, animations en CSS (GPU) plutôt qu'en JS, aucun
-  re-render lié au mouvement de la souris.
+- **Reconnaissance locale sur macOS** (SFSpeechRecognizer, sur l'appareil
+  quand le modèle est installé) : transcription en direct, voix qui ne quitte
+  pas le Mac, et texte utilisable par n'importe quel fournisseur (Claude
+  n'accepte pas d'audio). Windows : waveIn natif, phrase transcrite par
+  `gemini-3.5-flash-lite`.
+- **Push-to-talk** : appui et relâchement détectés (événement Carbon
+  `kEventHotKeyReleased` ; sous Windows, `GetAsyncKeyState` après le
+  `WM_HOTKEY`). La capture est prise à l'appui, et l'appui interrompt A.R.I.A.
+- **Écoute continue** : détection de voix sur le niveau RMS (seuil réglé par
+  la sensibilité, 120 ms pour démarrer, 900 ms de silence pour finir), 0,5 s
+  de pré-enregistrement pour ne pas couper « Aria », mot d'activation tolérant
+  (Levenshtein, accents), détection ignorée pendant qu'A.R.I.A parle (+400 ms).
+- **Threads** : le callback audio ne prend jamais de verrou bloquant
+  (`TryLock`) et les résultats de reconnaissance sont traités dans des
+  goroutines. Sans ça, arrêter le micro (qui attend le thread audio) depuis
+  une section verrouillée pourrait s'interbloquer.
+- **Voix neuronale** : API Interactions de Gemini (`gemini-3.8-flash-tts`)
+  en SSE ; le PCM 24 kHz est joué dès le premier morceau (AVAudioPlayerNode /
+  waveOut). Mesuré : premier son ~2,3 s, génération ~2× plus rapide que la
+  lecture. Une seule requête par réponse (le niveau gratuit n'en permet que
+  quelques-unes par minute) ; échec avant le premier son ⇒ voix système.
+- Machine à états testée avec un faux micro et une fausse IA
+  (`internal/app/voice_test.go`).
+
+## Mode proactif
+
+Toutes les N secondes (15 s à 10 min), si rien d'autre ne se passe (chat
+fermé, pas de parole, pas de réponse en cours) : capture, comparaison de la
+taille JPEG avec la précédente (écran inchangé ⇒ rien n'est envoyé), puis
+requête avec une consigne « ne parle que si c'est important, sinon réponds
+RAS ». Vérifié sur Gemini : écran neutre ⇒ « RAS » ; alerte batterie ⇒ une
+phrase d'avertissement.
+
+## Pistes de performance
+
+- **Latence vocale** : la voix système démarre dès la première phrase
+  streamée ; la voix neuronale attend la réponse complète (quota). Avec une
+  clé payante, passer à une requête TTS par phrase en pipeline.
+- **Écoute continue** : le micro reste ouvert (indicateur orange de macOS) ;
+  le coût CPU est un calcul RMS par bloc de 1024 échantillons.
+- **React** : peu d'état global, animations en CSS (GPU), niveau du micro et
+  déplacement du bouton écrits directement dans le DOM (pas de rendu à 20 Hz).
 
 ## Feuille de route
 
@@ -191,19 +225,21 @@ de quota.
 | 1.1 | Raccourcis globaux, focus clavier rendu à l'app précédente | ✅ |
 | 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
 | 1.3 | Page de paramètres complète, multi-fournisseurs, clés dans le trousseau | ✅ |
-| 1.4 | Icône dans la barre de menus / zone de notification, lancement au démarrage | |
+| 1.4 | Lancement à l'ouverture de session | ✅ |
+| 1.5 | Icône dans la barre de menus / zone de notification | |
 | 2 | Vision : capture à la demande (ScreenCaptureKit / GDI), pool, JPEG | ✅ |
 | 3 | IA : Gemini, capture à chaque question, streaming texte + voix | ✅ |
-| 4 | Voix : push-to-talk, audio envoyé directement à Gemini | |
-| 4.1 | Voix neuronale d'A.R.I.A (Gemini TTS ou Live API) | |
-| 5 | Mode proactif, réglages, packaging (signature, installeur NSIS) | |
+| 4 | Micro : push-to-talk, écoute continue + mot d'activation | ✅ |
+| 4.1 | Voix neuronale (Gemini TTS en streaming) | ✅ |
+| 5 | Mode proactif | ✅ |
+| 6 | Packaging : signature Developer ID, installeur NSIS, mises à jour | |
+| 7 | Gemini Live API (conversation vocale temps réel, interruption à la voix) | |
 
 ## Points d'attention connus
 
-- **Focus clavier vs jeux** : la fenêtre doit pouvoir prendre le focus pour la
-  saisie du chat, mais sans voler le focus au jeu le reste du temps. À traiter
-  avec le raccourci global (phase 1.1), éventuellement `WS_EX_NOACTIVATE` hors
-  chat.
+- **Focus clavier vs jeux** : le chat et les paramètres prennent le focus
+  et le rendent à l'app précédente à la fermeture ; le push-to-talk ne le
+  prend jamais.
 - **Jeux en plein écran exclusif (Windows)** : aucun overlay de fenêtre ne
   s'affiche au-dessus d'un jeu en plein écran exclusif DirectX. Il faut jouer
   en mode « fenêtré sans bordure » (le cas par défaut de la plupart des jeux
@@ -213,7 +249,11 @@ de quota.
 - **Permissions macOS** : la capture demande « Enregistrement de l'écran ». En
   dev, chaque build est signé ad hoc avec une nouvelle empreinte : macOS peut
   redemander l'autorisation après un rebuild (retirer puis rajouter Spark dans
-  Réglages). Une signature stable (certificat Developer ID) règlera ça. Le micro
-  (phase 4) demandera `NSMicrophoneUsageDescription` dans `Info.plist`.
+  Réglages). Une signature stable (certificat Developer ID) règlera ça. Micro
+  et reconnaissance vocale sont déclarés dans `Info.plist`
+  (`NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`).
+- **Windows non testé sur machine réelle** : overlay, capture GDI, micro
+  waveIn, lecteur waveOut et voix SAPI compilent et suivent la doc Win32, mais
+  n'ont jamais tourné sur un PC. Premier test à faire.
 - **macOS minimum** : 12.3 pour lancer l'app (ScreenCaptureKit est lié), 14 pour
   la capture.

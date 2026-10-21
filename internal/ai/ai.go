@@ -85,6 +85,17 @@ type PromptOptions struct {
 	Custom   string // user instructions
 }
 
+// Silence is what a proactive look answers when nothing deserves a remark.
+const Silence = "RAS"
+
+// ProactivePrompt is appended to the persona for unsolicited looks.
+func ProactivePrompt(lang string) string {
+	if lang == "en" {
+		return "\nNobody asked you anything: you are glancing at the screen on your own. Speak only if you see something important, urgent or genuinely useful right now (a danger, an opportunity, a visible mistake). Then say it in one short sentence. Otherwise answer exactly " + Silence + "."
+	}
+	return "\nPersonne ne t'a rien demandé : tu jettes un œil à l'écran de toi-même. Ne parle que si tu vois quelque chose d'important, d'urgent ou de vraiment utile à cet instant (un danger, une opportunité, une erreur visible). Dis-le alors en une seule phrase courte. Sinon, réponds exactement " + Silence + "."
+}
+
 // SystemPrompt builds A.R.I.A's persona. Answers are read aloud, hence the
 // "no formatting" rules.
 func SystemPrompt(o PromptOptions) string {

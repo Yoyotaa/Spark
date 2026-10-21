@@ -14,6 +14,7 @@ type Settings struct {
 	Vision     VisionSettings     `json:"vision"`
 	Voice      VoiceSettings      `json:"voice"`
 	Mic        MicSettings        `json:"mic"`
+	Proactive  ProactiveSettings  `json:"proactive"`
 	Hotkeys    HotkeySettings     `json:"hotkeys"`
 	Appearance AppearanceSettings `json:"appearance"`
 	Advanced   AdvancedSettings   `json:"advanced"`
@@ -44,6 +45,13 @@ type AISettings struct {
 	// Fallback re-runs a request declined by a safety filter on another
 	// model (Claude only, server-side).
 	Fallback bool `json:"fallback"`
+}
+
+// ProactiveSettings: A.R.I.A watches the screen on her own and speaks only
+// when something matters.
+type ProactiveSettings struct {
+	Enabled  bool `json:"enabled"`
+	Interval int  `json:"interval"` // seconds between two looks
 }
 
 type VisionSettings struct {
@@ -139,7 +147,8 @@ func Defaults() Settings {
 			HistoryTurns: 6,
 			Fallback:     true,
 		},
-		Vision: VisionSettings{Enabled: true, MaxSide: 1568, Quality: 72, ShowCursor: true},
+		Vision:    VisionSettings{Enabled: true, MaxSide: 1568, Quality: 72, ShowCursor: true},
+		Proactive: ProactiveSettings{Enabled: false, Interval: 60},
 		Voice: VoiceSettings{
 			Enabled: true, Engine: VoiceSystem, NeuralVoice: "Despina",
 			Style: "calme, posée et assurée, comme une assistante d'élite",
@@ -234,6 +243,7 @@ func (s Settings) Normalize() Settings {
 		s.AI.CustomInstructions = s.AI.CustomInstructions[:2000]
 	}
 
+	s.Proactive.Interval = clamp(s.Proactive.Interval, 15, 600)
 	s.Vision.MaxSide = clamp(s.Vision.MaxSide, 512, 2560)
 	s.Vision.Quality = clamp(s.Vision.Quality, 30, 95)
 

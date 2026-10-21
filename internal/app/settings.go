@@ -11,6 +11,7 @@ import (
 	"spark/internal/audio"
 	"spark/internal/config"
 	"spark/internal/hotkey"
+	"spark/internal/startup"
 )
 
 // GetSettings returns the persisted user preferences.
@@ -278,4 +279,13 @@ func (a *App) ListNeuralVoices() []NeuralVoice {
 		out[i] = NeuralVoice{Name: v.Name, Style: v.Style}
 	}
 	return out
+}
+
+// GetLaunchAtLogin reports whether Spark starts with the session.
+func (a *App) GetLaunchAtLogin() bool { return startup.Enabled() }
+
+// SetLaunchAtLogin registers Spark (or not) to start with the session.
+func (a *App) SetLaunchAtLogin(on bool) (bool, error) {
+	err := startup.Set(on)
+	return startup.Enabled(), err
 }

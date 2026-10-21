@@ -18,6 +18,7 @@ export type Settings = {
     fallback: boolean
   }
   vision: {enabled: boolean; maxSide: number; quality: number; showCursor: boolean}
+  proactive: {enabled: boolean; interval: number}
   voice: {
     enabled: boolean
     engine: 'system' | 'gemini'
@@ -70,6 +71,7 @@ export const DEFAULTS: Settings = {
     fallback: true,
   },
   vision: {enabled: true, maxSide: 1568, quality: 72, showCursor: true},
+  proactive: {enabled: false, interval: 60},
   voice: {
     enabled: true,
     engine: 'system',

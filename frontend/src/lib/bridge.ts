@@ -250,3 +250,16 @@ export async function listNeuralVoices(): Promise<NeuralVoice[]> {
     {name: 'Kore', style: 'Ferme'},
   ]
 }
+
+let previewLogin = false
+
+export async function getLaunchAtLogin(): Promise<boolean> {
+  return inWails ? App.GetLaunchAtLogin() : previewLogin
+}
+
+/** Resolves with the actual state (the OS may refuse). */
+export async function setLaunchAtLogin(on: boolean): Promise<boolean> {
+  if (inWails) return App.SetLaunchAtLogin(on)
+  previewLogin = on
+  return on
+}

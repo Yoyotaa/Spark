@@ -117,3 +117,9 @@ void sparkUnregisterHotkey(uint32_t id) {
 		}
 	});
 }
+
+// Test support: in `go test` nothing services the main queue, so the
+// functions above that hop to the main thread would block forever.
+void sparkRunMainLoop(void) {
+	CFRunLoopRun();
+}

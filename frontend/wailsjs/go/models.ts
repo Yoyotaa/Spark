@@ -395,6 +395,20 @@ export namespace config {
 	        this.y = source["y"];
 	    }
 	}
+	export class ProactiveSettings {
+	    enabled: boolean;
+	    interval: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProactiveSettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.interval = source["interval"];
+	    }
+	}
 	export class VoiceSettings {
 	    enabled: boolean;
 	    engine: string;
@@ -445,6 +459,7 @@ export namespace config {
 	    vision: VisionSettings;
 	    voice: VoiceSettings;
 	    mic: MicSettings;
+	    proactive: ProactiveSettings;
 	    hotkeys: HotkeySettings;
 	    appearance: AppearanceSettings;
 	    advanced: AdvancedSettings;
@@ -460,6 +475,7 @@ export namespace config {
 	        this.vision = this.convertValues(source["vision"], VisionSettings);
 	        this.voice = this.convertValues(source["voice"], VoiceSettings);
 	        this.mic = this.convertValues(source["mic"], MicSettings);
+	        this.proactive = this.convertValues(source["proactive"], ProactiveSettings);
 	        this.hotkeys = this.convertValues(source["hotkeys"], HotkeySettings);
 	        this.appearance = this.convertValues(source["appearance"], AppearanceSettings);
 	        this.advanced = this.convertValues(source["advanced"], AdvancedSettings);

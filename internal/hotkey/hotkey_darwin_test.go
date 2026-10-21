@@ -2,7 +2,21 @@
 
 package hotkey
 
-import "testing"
+import (
+	"os"
+	"runtime"
+	"testing"
+)
+
+// Keyboard layout APIs run on the main thread, which the app's run loop
+// services. Do the same here: keep the main goroutine on the main OS thread
+// and run the loop there while the tests run elsewhere.
+func init() { runtime.LockOSThread() }
+
+func TestMain(m *testing.M) {
+	go func() { os.Exit(m.Run()) }()
+	runMainLoop()
+}
 
 func TestKeyCodeResolvesEveryKey(t *testing.T) {
 	seen := map[uint32]Key{}

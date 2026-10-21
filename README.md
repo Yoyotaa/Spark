@@ -59,6 +59,25 @@ Chaque question part avec une capture prise à l'instant (œil du chat pour
 couper la vision). ⚠️ Sur le niveau gratuit de Gemini, Google peut utiliser
 les requêtes (captures comprises) pour améliorer ses produits.
 
+### Parler à A.R.I.A
+
+- **Push-to-talk** (défaut, touche F8) : maintiens, parle, relâche. La capture
+  d'écran est prise à l'appui ; appuyer coupe A.R.I.A si elle parle.
+- **Écoute continue** : « Aria, que dois-je faire ? ». Le mot d'activation
+  évite qu'elle réagisse aux discussions (Discord…).
+- macOS : reconnaissance vocale d'Apple, en direct et sur l'appareil quand
+  c'est possible. Windows : transcription par Gemini (clé Gemini requise).
+
+### Voix
+
+Voix système (instantanée) ou **voix neuronale Gemini** (naturelle, ~2,5 s de
+latence en plus, quota gratuit limité, repli automatique sur la voix système).
+
+### Mode proactif
+
+Option : A.R.I.A regarde l'écran à intervalle régulier et ne parle que si elle
+voit quelque chose d'important. Désactivé par défaut (consomme du quota).
+
 ### Raccourcis
 
 Tous réassignables dans les paramètres.
@@ -72,13 +91,6 @@ Tous réassignables dans les paramètres.
 
 Le bouton se déplace par glisser-déposer ; sa position est mémorisée
 (`~/Library/Application Support/Spark/settings.json`, `%AppData%\Spark` sous Windows).
-
-### Voix
-
-En attendant une voix neuronale (phase 4), A.R.I.A utilise la meilleure voix
-française féminine du système. Pour une voix bien plus naturelle sur macOS :
-Réglages Système › Accessibilité › Contenu énoncé › Voix système › Gérer les
-voix › Français › **Audrey (Premium)**.
 
 ## Build
 
@@ -98,9 +110,10 @@ internal/app            pont Wails ↔ modules
 internal/overlay        click-through natif (darwin / windows)
 internal/vision         capture d'écran        (à venir)
 internal/ai             LLM multimodal : Gemini (REST), Claude (SDK officiel), OpenAI-compatible
-internal/audio          TTS système (say / SAPI), STT à venir
+internal/audio          micro, reconnaissance vocale, voix système, lecteur PCM natif
 internal/hotkey         raccourcis globaux (Carbon / RegisterHotKey)
 internal/config         paramètres persistants, clés (trousseau), variables d'env
+internal/startup        lancement à l'ouverture de session
 frontend/src            UI React + Tailwind
 build/brand             logo et icône (SVG sources)
 docs/ARCHITECTURE.md    choix techniques et feuille de route

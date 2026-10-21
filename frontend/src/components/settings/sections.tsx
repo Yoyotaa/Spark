@@ -266,8 +266,39 @@ export function AISection({s, update, status, onStatus}: SectionProps & {status:
 // ---- Vision --------------------------------------------------------------------
 
 export function VisionSection({s, update}: SectionProps) {
+  const perHour = Math.round(3600 / s.proactive.interval)
   return (
     <div className="space-y-6">
+      <Group title="Mode proactif">
+        <Row
+          label="A.R.I.A intervient d’elle-même"
+          help="Elle jette un œil à l’écran à intervalle régulier et ne parle que si elle voit quelque chose d’important : danger, opportunité, erreur visible. Sinon, silence."
+        >
+          <Toggle label="Mode proactif" checked={s.proactive.enabled} onChange={(v) => update((d) => void (d.proactive.enabled = v))} />
+        </Row>
+        <Row
+          label="Fréquence"
+          help={`Jusqu’à ${perHour} analyses par heure, sautées quand l’écran n’a pas changé, quand tu écris, parles ou qu’A.R.I.A répond.`}
+          disabled={!s.proactive.enabled}
+        >
+          <Segmented
+            value={s.proactive.interval}
+            options={[
+              {value: 20, label: '20 s'},
+              {value: 60, label: '1 min'},
+              {value: 180, label: '3 min'},
+              {value: 600, label: '10 min'},
+            ]}
+            onChange={(v) => update((d) => void (d.proactive.interval = v))}
+          />
+        </Row>
+        {s.proactive.enabled && s.ai.provider === 'gemini' && s.proactive.interval < 60 && (
+          <div className="px-4 py-3 text-[11.5px] leading-relaxed text-amber-200/90">
+            Sur le niveau gratuit de Gemini, une analyse toutes les 20 s peut épuiser le quota journalier en quelques heures.
+          </div>
+        )}
+      </Group>
+
       <Group title="Capture d’écran">
         <Row label="A.R.I.A voit l’écran par défaut" help="Chaque question part avec une capture prise à l’instant. L’œil du chat la coupe ponctuellement.">
           <Toggle label="Vision par défaut" checked={s.vision.enabled} onChange={(v) => update((d) => void (d.vision.enabled = v))} />
@@ -706,8 +737,30 @@ export function PrivacySection({s, update, onCleared}: SectionProps & {onCleared
 
 export function AdvancedSection({s, update, onReset}: SectionProps & {onReset: () => void}) {
   const [confirm, setConfirm] = useState(false)
+  const [login, setLogin] = useState<boolean | null>(null)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  useEffect(() => {
+    void bridge.getLaunchAtLogin().then(setLogin)
+  }, [])
   return (
     <div className="space-y-6">
+      <Group title="Système">
+        <Row label="Lancer Spark à l’ouverture de session" help="A.R.I.A est prête dès que tu allumes l’ordinateur.">
+          <Toggle
+            label="Lancement au démarrage"
+            checked={!!login}
+            onChange={async (v) => {
+              setLoginError(null)
+              try {
+                setLogin(await bridge.setLaunchAtLogin(v))
+              } catch (e) {
+                setLoginError(errorText(e))
+              }
+            }}
+          />
+        </Row>
+        {loginError && <div className="px-4 py-3 text-[11.5px] text-rose-200">{loginError}</div>}
+      </Group>
       <Group title="Performance">
         <Row
           label="Détection du survol"

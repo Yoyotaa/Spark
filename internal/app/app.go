@@ -43,6 +43,7 @@ type App struct {
 	player   audio.Player
 	speakMu  sync.Mutex // one voice at a time
 	voice    *voice
+	pro      proactive
 	visible  atomic.Bool
 	debug    atomic.Bool
 	boot     sync.Once
@@ -104,6 +105,7 @@ func (a *App) DomReady(context.Context) {
 	a.mu.Lock()
 	a.registerHotkeys()
 	a.mu.Unlock()
+	go a.proactiveLoop(a.ctx)
 }
 
 // Shutdown only cancels: it must not wait on goroutines that may be
@@ -387,6 +389,7 @@ func (a *App) SetMouseCaptured(v bool) {
 // afterwards.
 func (a *App) SetKeyboardFocus(focused bool) {
 	a.debugf("keyboard focus=%v", focused)
+	a.pro.focused.Store(focused)
 	if focused {
 		a.overlay.Focus()
 	} else {
