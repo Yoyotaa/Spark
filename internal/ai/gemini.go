@@ -52,7 +52,13 @@ type Gemini struct {
 	// skipUntil (unix nanos): the primary model is known to be saturated,
 	// go straight to the fallback instead of wasting a round trip.
 	skipUntil atomic.Int64
+	// hedgeDelay: how long the primary may stay silent before the
+	// fallback is queried in parallel.
+	hedgeDelay time.Duration
 }
+
+// A healthy model starts answering a screenshot question in 1.8-4.7 s.
+const defaultHedgeDelay = 5 * time.Second
 
 // How long a saturated model is skipped: quotas reset per minute, queues
 // clear faster.
@@ -78,6 +84,7 @@ func NewGemini(apiKey, model, baseURL, thinking string) *Gemini {
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		thinkingLevel: thinking,
 		fallback:      FallbackGeminiModel,
+		hedgeDelay:    defaultHedgeDelay,
 		// No global timeout: a stream may legitimately last a while; the
 		// caller's context bounds it.
 		client: &http.Client{Transport: &http.Transport{
@@ -181,25 +188,99 @@ type errSaturated struct {
 func (e errSaturated) Error() string { return e.err.Error() }
 func (e errSaturated) Unwrap() error { return e.err }
 
+type postResult struct {
+	resp  *http.Response
+	err   error
+	model string
+}
+
+var errSlow = errors.New("pas de réponse après quelques secondes")
+
+// post sends the request to the chosen model and, if it is saturated or
+// slow, to the fallback: when the primary has not started answering after
+// hedgeDelay, the fallback is queried in parallel and the first to answer
+// wins (the other request is cancelled).
 func (g *Gemini) post(ctx context.Context, system string, history []Message) (*http.Response, error) {
 	canFallback := g.fallback != "" && g.fallback != g.model
 	if canFallback && time.Now().UnixNano() < g.skipUntil.Load() {
 		return g.postModel(ctx, g.fallback, system, history)
 	}
-	resp, err := g.postModel(ctx, g.model, system, history)
-	var sat errSaturated
-	if err == nil || !errors.As(err, &sat) || !canFallback || ctx.Err() != nil {
-		return resp, err
+
+	results := make(chan postResult, 2)
+	cancels := map[string]context.CancelFunc{}
+	launch := func(model string) {
+		// Children of ctx: whichever wins keeps streaming under its own
+		// context, released when ctx ends.
+		c, cancel := context.WithCancel(ctx)
+		cancels[model] = cancel
+		go func() {
+			resp, err := g.postModel(c, model, system, history)
+			results <- postResult{resp, err, model}
+		}()
 	}
-	cooldown := busyCooldown
-	if sat.quota {
-		cooldown = quotaCooldown
+	pending := 1
+	launch(g.model)
+	hedged := false
+	hedge := func(reason error) {
+		if hedged || !canFallback {
+			return
+		}
+		hedged = true
+		pending++
+		launch(g.fallback)
+		if g.OnFallback != nil {
+			g.OnFallback(g.model, g.fallback, reason)
+		}
 	}
-	g.skipUntil.Store(time.Now().Add(cooldown).UnixNano())
-	if g.OnFallback != nil {
-		g.OnFallback(g.model, g.fallback, err)
+	// Drop the losers: cancel them and close any late response.
+	abandon := func(winner string, left int) {
+		for m, cancel := range cancels {
+			if m != winner {
+				cancel()
+			}
+		}
+		go func() {
+			for range left {
+				if r := <-results; r.resp != nil {
+					r.resp.Body.Close()
+				}
+			}
+		}()
 	}
-	return g.postModel(ctx, g.fallback, system, history)
+
+	timer := time.NewTimer(g.hedgeDelay)
+	defer timer.Stop()
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			abandon("", pending)
+			return nil, ctx.Err()
+		case <-timer.C:
+			if hedge(errSlow); hedged {
+				g.skipUntil.Store(time.Now().Add(busyCooldown).UnixNano())
+			}
+		case r := <-results:
+			pending--
+			if r.err == nil {
+				abandon(r.model, pending)
+				return r.resp, nil
+			}
+			lastErr = r.err
+			var sat errSaturated
+			if r.model == g.model && errors.As(r.err, &sat) && ctx.Err() == nil {
+				cooldown := busyCooldown
+				if sat.quota {
+					cooldown = quotaCooldown
+				}
+				g.skipUntil.Store(time.Now().Add(cooldown).UnixNano())
+				hedge(r.err)
+			}
+			if pending == 0 {
+				return nil, lastErr
+			}
+		}
+	}
 }
 
 func (g *Gemini) postModel(ctx context.Context, model, system string, history []Message) (*http.Response, error) {

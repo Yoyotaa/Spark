@@ -228,6 +228,10 @@ export function ChatPanel({
           </button>
           <input
             ref={input}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={seeScreen ? 'Que dois-je faire ici ?' : 'Demande à A.R.I.A…'}

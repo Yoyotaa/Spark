@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestSentences(t *testing.T) {
@@ -188,5 +191,64 @@ func TestGeminiNoFallbackOnRealErrors(t *testing.T) {
 	_, err := NewGemini("k", "primary", srv.URL, "").Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
 	if err == nil || calls != 1 {
 		t.Fatalf("a bad key must not hit the fallback: %v after %d calls", err, calls)
+	}
+}
+
+func TestGeminiHedgesASlowModel(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	primaryCancelled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/models/"), ":streamGenerateContent"))
+		mu.Unlock()
+		if strings.Contains(r.URL.Path, "/models/primary:") {
+			// The server only notices a client disconnect once the body
+			// is read; then stay stuck until the hedge wins.
+			_, _ = io.ReadAll(r.Body)
+			<-r.Context().Done()
+			close(primaryCancelled)
+			return
+		}
+		fmt.Fprint(w, sse("vite"))
+	}))
+	defer srv.Close()
+
+	g := NewGemini("k", "primary", srv.URL, "")
+	g.hedgeDelay = 50 * time.Millisecond
+	start := time.Now()
+	ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, err := collect(t, ch); err != nil || text != "vite" {
+		t.Fatalf("got %q, %v", text, err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("hedged answer took %v", d)
+	}
+	select {
+	case <-primaryCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the slow request must be cancelled once the fallback wins")
+	}
+}
+
+func TestGeminiNoHedgeWhenFast(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, sse("ok"))
+	}))
+	defer srv.Close()
+	g := NewGemini("k", "primary", srv.URL, "")
+	ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	time.Sleep(50 * time.Millisecond)
+	if calls != 1 {
+		t.Fatalf("a fast model must not trigger the fallback, %d calls", calls)
 	}
 }
