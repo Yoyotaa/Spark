@@ -226,14 +226,51 @@ phrase d'avertissement.
 | 1.2 | Identité visuelle, bouton déplaçable, accueil vocal | ✅ |
 | 1.3 | Page de paramètres complète, multi-fournisseurs, clés dans le trousseau | ✅ |
 | 1.4 | Lancement à l'ouverture de session | ✅ |
-| 1.5 | Icône dans la barre de menus / zone de notification | |
+| 1.5 | Icône de barre des menus / zone de notification, quitter | ✅ |
 | 2 | Vision : capture à la demande (ScreenCaptureKit / GDI), pool, JPEG | ✅ |
 | 3 | IA : Gemini, capture à chaque question, streaming texte + voix | ✅ |
 | 4 | Micro : push-to-talk, écoute continue + mot d'activation | ✅ |
 | 4.1 | Voix neuronale (Gemini TTS en streaming) | ✅ |
 | 5 | Mode proactif | ✅ |
-| 6 | Packaging : signature Developer ID, installeur NSIS, mises à jour | |
+| 6 | Release : version, installeur NSIS, .app universel, vérification des mises à jour | ✅ |
+| 6.1 | Signature Developer ID + notarisation (Apple), signature Authenticode (Windows) | |
 | 7 | Gemini Live API (conversation vocale temps réel, interruption à la voix) | |
+
+## Robustesse
+
+- **Overlay auto-réparant** : toutes les 2 s, la fenêtre vérifie qu'elle est
+  au premier plan et visible, et se remet en place sinon (journalisé). Vu en
+  réel après un changement de bureau.
+- **Erreurs visibles** : les erreurs JavaScript sont écrites dans le journal
+  (`frontend:`) et isolées par composant (`Guard`) : le bouton survit à une
+  erreur du chat, d'une bulle ou des paramètres.
+- **Fermeture** : plus aucun événement n'est envoyé à la WebView dès que la
+  fermeture commence (avant : plantage dans `ExecJS` de Wails au Ctrl+C).
+- **Thread audio** : il ne fait que mettre le niveau en file ; appeler Wails
+  depuis ce thread temps réel faisait planter l'app après quelques minutes
+  (symbolisé sur le bloc `ExecJS`).
+- **Requêtes interruptibles** : le verrou des questions n'est tenu que pour
+  enregistrer la question ; une requête bloquée sur le réseau est coupée
+  immédiatement par F8, STOP ou une nouvelle question.
+- **Gemini saturé** : si le modèle n'a pas commencé à répondre en 5 s, la
+  même requête part en parallèle sur `gemini-3.5-flash-lite` et la première
+  réponse gagne ; un 429/503 bascule aussitôt ; le modèle saturé est ensuite
+  contourné 30-60 s.
+
+## Release
+
+`scripts/set-version.mjs` reporte la version du tag dans `wails.json`
+(Info.plist, ressources Windows, installeur) et dans le binaire (`-ldflags`).
+Le workflow `release.yml` (sur tag `v*`) teste, construit le `.app`
+universel (zip), l'installeur NSIS et l'exécutable portable, puis publie la
+release. Au lancement, Spark interroge l'API GitHub (désactivable) et
+signale une version plus récente.
+
+Sans signature Apple/Microsoft, Gatekeeper et SmartScreen avertissent au
+premier lancement (procédure dans le README). En dev, `scripts/dev-cert.sh`
+crée une identité « Spark Dev » ; Spark s'en sert pour se signer quand il se
+relance (`internal/selfresp`), ce qui stabilise les autorisations macOS
+d'une recompilation à l'autre.
 
 ## Points d'attention connus
 
