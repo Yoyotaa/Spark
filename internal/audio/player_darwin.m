@@ -1,3 +1,7 @@
+// Spark requires macOS 12.3 (Info.plist), Wails compiles for 10.13: the
+// APIs below (10.15+) are always available at runtime.
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+
 #import <AVFoundation/AVFoundation.h>
 #include "player_darwin.h"
 

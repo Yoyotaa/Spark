@@ -63,6 +63,10 @@ type voice struct {
 	speaking  atomic.Bool  // A.R.I.A's TTS is playing
 	spokeAt   atomic.Int64 // unix nanos when the TTS last stopped
 	lastLevel atomic.Int64 // throttles UI level events
+
+	// levels decouples the audio thread from everything else: it only
+	// queues the level; a goroutine runs detection and emits events.
+	levels chan float32
 }
 
 // pendingShot is a screenshot taken when the user starts speaking, so the
@@ -77,11 +81,14 @@ func newVoice(a *App) *voice {
 	v := &voice{a: a, allowed: func() bool {
 		return audio.MicPermission() == audio.PermissionGranted && audio.SpeechPermission() == audio.PermissionGranted
 	}}
-	// Native callbacks must return at once: stopping the engine waits for
-	// the audio thread, which must never wait on v.mu in return. Level
-	// uses TryLock, the rest is handed to goroutines.
+	// Native callbacks must return at once and never call into Wails or
+	// AppKit: the level comes from CoreAudio's real-time thread (calling
+	// EventsEmit from there crashed Wails' ExecJS after a few minutes), and
+	// stopping the engine waits for that thread. Everything is queued.
+	v.levels = make(chan float32, 64)
+	go v.pumpLevels(a.ctx)
 	v.in = audio.NewInput(audio.InputEvents{
-		Level:   v.onLevel,
+		Level:   v.pushLevel,
 		Partial: func(t string) { go v.onPartial(t) },
 		Final:   func(t string) { go v.onFinal(t) },
 		Error:   func(err error) { go v.onError(err) },
@@ -150,7 +157,7 @@ func (v *voice) ensurePermissions() bool {
 		v.onError(errors.New("accès au micro ou à la reconnaissance vocale refusé : autorise Spark dans Réglages Système › Confidentialité"))
 		return false
 	}
-	audio.RequestPermissions(func(ok bool) {
+	v.a.requestPermissions(func(ok bool) {
 		if ok {
 			v.mu.Lock()
 			v.syncMicLocked()
@@ -252,7 +259,28 @@ func (v *voice) startShotLocked() {
 	}()
 }
 
+// pushLevel runs on the audio thread: queue the sample, drop it if the
+// consumer lags (a level is worthless once stale).
+func (v *voice) pushLevel(rms float32) {
+	select {
+	case v.levels <- rms:
+	default:
+	}
+}
+
+func (v *voice) pumpLevels(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case rms := <-v.levels:
+			v.onLevel(rms)
+		}
+	}
+}
+
 // onLevel drives the UI meter and, in continuous mode, voice detection.
+// Runs on the pump goroutine (tests call it directly).
 func (v *voice) onLevel(rms float32) {
 	now := time.Now()
 	if now.UnixNano()-v.lastLevel.Load() >= int64(50*time.Millisecond) {
@@ -260,10 +288,7 @@ func (v *voice) onLevel(rms float32) {
 		v.a.emit(EventVoiceLevel, min(1, float64(rms)*8))
 	}
 
-	// Audio thread: skip this sample rather than wait for the lock.
-	if !v.mu.TryLock() {
-		return
-	}
+	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.cfg.Mode != config.MicContinuous || v.testing {
 		return
@@ -427,4 +452,18 @@ func (v *voice) setTesting(on bool) error {
 		return errors.New("micro indisponible")
 	}
 	return nil
+}
+
+// requestPermissions shows the OS permission dialogs above the overlay
+// (which otherwise covers them) and restores it once they are answered.
+func (a *App) requestPermissions(done func(ok bool)) {
+	if a.overlay != nil {
+		a.overlay.Yield(true)
+	}
+	audio.RequestPermissions(func(ok bool) {
+		if a.overlay != nil {
+			a.overlay.Yield(false)
+		}
+		done(ok)
+	})
 }

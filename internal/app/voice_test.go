@@ -235,3 +235,34 @@ func TestPressInterruptsAnswer(t *testing.T) {
 		t.Fatal("pressing push-to-talk must stop A.R.I.A")
 	}
 }
+
+// The audio thread must never block nor call into the UI: pushLevel only
+// queues, the pump goroutine does the rest.
+func TestAudioThreadNeverBlocks(t *testing.T) {
+	mic := config.Defaults().Mic
+	mic.Mode = config.MicContinuous
+	a, in, _, rec := newVoiceApp(t, mic)
+	v := a.voice
+	v.levels = make(chan float32, 64)
+
+	start := time.Now()
+	for range 100_000 { // no consumer yet: must drop, not block
+		v.pushLevel(0.3)
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("pushLevel blocked: %v", d)
+	}
+	if rec.has(EventVoiceState + "=listening") {
+		t.Fatal("the audio thread must not run voice detection itself")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go v.pumpLevels(ctx)
+	waitFor(t, "detection on the pump goroutine", func() bool {
+		v.pushLevel(0.3)
+		time.Sleep(20 * time.Millisecond)
+		b, _, _ := in.counts()
+		return b == 1
+	})
+}

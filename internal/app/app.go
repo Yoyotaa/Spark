@@ -69,10 +69,14 @@ type App struct {
 
 	// emitFn replaces the Wails event bus in tests.
 	emitFn func(event string, data ...any)
+	emitMu sync.Mutex
 }
 
-// emit sends an event to the frontend.
+// emit sends an event to the frontend. Serialized: events come from many
+// goroutines and Wails' ExecJS is not meant to be hammered concurrently.
 func (a *App) emit(event string, data ...any) {
+	a.emitMu.Lock()
+	defer a.emitMu.Unlock()
 	if a.emitFn != nil {
 		a.emitFn(event, data...)
 		return

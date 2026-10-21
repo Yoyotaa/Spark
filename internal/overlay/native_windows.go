@@ -130,3 +130,13 @@ func (p *windowsPlatform) restoreFocus() {
 		procSetForegroundWindow.Call(prev)
 	}
 }
+
+// yield drops the top-most flag while a system dialog must be reachable.
+func (p *windowsPlatform) yield(y bool) {
+	after := hwndTopmost
+	if y {
+		after = ^uintptr(1) // HWND_NOTOPMOST (-2)
+	}
+	const swpNoMove, swpNoSize = 0x0002, 0x0001
+	procSetWindowPos.Call(p.hwnd, after, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
+}

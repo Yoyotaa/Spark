@@ -516,7 +516,9 @@ export function MicSection({s, update}: SectionProps) {
           <span className={`size-2 rounded-full ${granted ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-amber-300'}`} />
           {granted
             ? 'Micro et reconnaissance vocale autorisés.'
-            : denied
+            : asking
+              ? 'Réponds aux fenêtres de macOS qui viennent de s’ouvrir (micro, puis reconnaissance vocale).'
+              : denied
               ? 'Accès refusé : autorise Spark dans Réglages Système › Confidentialité › Micro et Reconnaissance vocale.'
               : 'Spark a besoin du micro et de la reconnaissance vocale.'}
         </span>

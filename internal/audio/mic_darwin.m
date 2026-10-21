@@ -1,3 +1,7 @@
+// Spark requires macOS 12.3 (Info.plist), Wails compiles for 10.13: the
+// APIs below (10.15+) are always available at runtime.
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+
 #import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <Speech/Speech.h>
@@ -150,6 +154,10 @@ int sparkSpeechBegin(const char *locale, char *err, size_t errLen) {
 
 		if (recognizer == nil || ![recognizer.locale.localeIdentifier isEqualToString:loc]) {
 			recognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:loc]];
+			// Results off the main thread: it belongs to the UI.
+			NSOperationQueue *q = [NSOperationQueue new];
+			q.maxConcurrentOperationCount = 1;
+			recognizer.queue = q;
 		}
 		if (recognizer == nil || !recognizer.isAvailable) {
 			copyErr(@"reconnaissance vocale indisponible pour cette langue", err, errLen);
@@ -215,8 +223,20 @@ void sparkSpeechCancel(void) {
 	});
 }
 
+// NSSound must be used from the main thread and stay alive while it plays:
+// a sound released mid-playback is messaged later by AppKit, on the main
+// thread, and crashes the app. Both cues are loaded once and kept.
 void sparkPlayCue(int start) {
-	NSSound *s = [NSSound soundNamed:(start ? @"Tink" : @"Pop")];
-	s.volume = 0.35;
-	[s play];
+	dispatch_async(dispatch_get_main_queue(), ^{
+		static NSSound *startCue = nil, *stopCue = nil;
+		if (startCue == nil) {
+			startCue = [[NSSound soundNamed:@"Tink"] copy];
+			stopCue = [[NSSound soundNamed:@"Pop"] copy];
+			startCue.volume = 0.35;
+			stopCue.volume = 0.35;
+		}
+		NSSound *s = start ? startCue : stopCue;
+		[s stop];
+		[s play];
+	});
 }

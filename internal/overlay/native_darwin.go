@@ -97,6 +97,17 @@ static void sparkSetIgnoreMouse(int ignore) {
 	});
 }
 
+// Permission dialogs of macOS sit below the status-bar level the overlay
+// uses: step down to a normal window while one is shown.
+static void sparkYield(int yield) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		[sparkWindow setLevel:(yield ? NSNormalWindowLevel : NSStatusWindowLevel)];
+		if (!yield) {
+			[sparkWindow orderFrontRegardless];
+		}
+	});
+}
+
 static void sparkFocus(void) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 #pragma clang diagnostic push
@@ -149,3 +160,11 @@ func (darwinPlatform) setIgnoreMouse(ignore bool) {
 
 func (darwinPlatform) focus()        { C.sparkFocus() }
 func (darwinPlatform) restoreFocus() { C.sparkRestoreFocus() }
+
+func (darwinPlatform) yield(y bool) {
+	v := C.int(0)
+	if y {
+		v = 1
+	}
+	C.sparkYield(v)
+}

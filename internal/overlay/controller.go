@@ -29,6 +29,9 @@ type platform interface {
 	// had it; restoreFocus hands it back.
 	focus()
 	restoreFocus()
+	// yield lowers the window (true) so OS dialogs appear above it, and
+	// restores it (false).
+	yield(y bool)
 }
 
 // WindowClassName is given to Wails (options.Windows.WindowClassName) so the
@@ -102,6 +105,12 @@ func (c *Controller) SetPaused(v bool) {
 // Focus gives keyboard focus to the overlay (chat input).
 func (c *Controller) Focus() {
 	c.native.focus()
+}
+
+// Yield lets OS dialogs (permissions) show above the overlay; call again
+// with false once they are answered.
+func (c *Controller) Yield(y bool) {
+	c.native.yield(y)
 }
 
 // RestoreFocus gives keyboard focus back to the previously active app.

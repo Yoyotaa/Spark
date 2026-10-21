@@ -250,7 +250,7 @@ func (a *App) GetMicStatus() MicStatus {
 // answer (or a timeout).
 func (a *App) RequestMicPermission() MicStatus {
 	done := make(chan struct{})
-	audio.RequestPermissions(func(bool) { close(done) })
+	a.requestPermissions(func(bool) { close(done) })
 	select {
 	case <-done:
 	case <-time.After(2 * time.Minute):
