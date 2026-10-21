@@ -160,7 +160,7 @@ export function saveOrbPosition(p: Point): void {
 }
 
 export type Capture = Pick<app.Capture, 'width' | 'height' | 'bytes' | 'millis' | 'dataUrl'>
-export type Turn = {id: number; capture?: Capture}
+export type Turn = {id: number; capture?: Capture; interrupted?: boolean}
 export type Delta = {id: number; text: string}
 export type Done = {id: number; error?: string; interrupted?: boolean}
 

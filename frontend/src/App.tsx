@@ -260,6 +260,8 @@ export default function App() {
       setWaiting(true)
       try {
         const turn = await bridge.ask(text, seeScreen)
+        // Superseded by a newer question (push-to-talk...): nothing to wait for.
+        if (turn.interrupted) setWaiting(false)
         if (turn.capture) {
           setMessages((m) => m.map((x) => (x.id === userId ? {...x, image: turn.capture} : x)))
         }
