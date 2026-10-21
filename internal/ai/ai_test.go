@@ -138,3 +138,45 @@ func TestGeminiFriendlyErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestGeminiFallsBackWhenSaturated(t *testing.T) {
+	var models []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		models = append(models, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/models/"), ":streamGenerateContent"))
+		if strings.Contains(r.URL.Path, "/models/primary:") {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"quota"}}`)
+			return
+		}
+		fmt.Fprint(w, sse("ok"))
+	}))
+	defer srv.Close()
+
+	g := NewGemini("k", "primary", srv.URL, "")
+	var from, to string
+	g.OnFallback = func(f, t string, _ error) { from, to = f, t }
+	ch, err := g.Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, err := collect(t, ch); err != nil || text != "ok" {
+		t.Fatalf("got %q, %v", text, err)
+	}
+	if from != "primary" || to != FallbackGeminiModel || fmt.Sprint(models) != "[primary "+FallbackGeminiModel+"]" {
+		t.Fatalf("fallback %s -> %s, calls %v", from, to, models)
+	}
+}
+
+func TestGeminiNoFallbackOnRealErrors(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":{"message":"bad key"}}`)
+	}))
+	defer srv.Close()
+	_, err := NewGemini("k", "primary", srv.URL, "").Stream(context.Background(), "", []Message{{Role: RoleUser, Text: "x"}})
+	if err == nil || calls != 1 {
+		t.Fatalf("a bad key must not hit the fallback: %v after %d calls", err, calls)
+	}
+}

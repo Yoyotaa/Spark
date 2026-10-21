@@ -32,6 +32,8 @@ type Capture struct {
 type Turn struct {
 	ID      int      `json:"id"`
 	Capture *Capture `json:"capture,omitempty"`
+	// Interrupted: superseded by a newer question before any answer.
+	Interrupted bool `json:"interrupted,omitempty"`
 }
 
 // Delta is a piece of streamed answer (EventDelta).
@@ -55,26 +57,50 @@ func (a *App) Ask(text string, withScreen bool) (Turn, error) {
 	return a.ask(text, withScreen, nil, nil)
 }
 
-// interrupt stops the current answer (request and voice) and waits for it,
-// so the history keeps a strict user/model alternation. Caller holds askMu.
+// interruptLocked stops the current question (request, answer, voice)
+// and waits for it, so the history keeps a strict user/model alternation.
+// Caller holds askMu; the waited goroutine never needs it before done.
 func (a *App) interruptLocked() {
 	if a.askCancel != nil {
 		a.askCancel()
 		<-a.askDone
-		a.askCancel = nil
+		a.askCancel, a.askDone = nil, nil
 	}
 }
 
-// Interrupt stops A.R.I.A (answer being generated or spoken).
+// Interrupt stops A.R.I.A (request pending, answer being generated or
+// spoken). It returns at once even if the request is stuck on the network.
 func (a *App) Interrupt() {
 	a.askMu.Lock()
 	a.interruptLocked()
 	a.askMu.Unlock()
 }
 
+// busy reports whether a question is in progress.
+func (a *App) busy() bool {
+	a.askMu.Lock()
+	defer a.askMu.Unlock()
+	return a.askCancel != nil
+}
+
+// finish marks a question as over (done is closed first, see
+// interruptLocked), unless a newer one already took its place.
+func (a *App) finish(done chan struct{}) {
+	close(done)
+	a.askMu.Lock()
+	if a.askDone == done {
+		a.askCancel, a.askDone = nil, nil
+	}
+	a.askMu.Unlock()
+}
+
 // ask is Ask with an optional screenshot already taken (voice questions
 // capture the screen when the user starts speaking). It takes ownership of
 // frame.
+//
+// The lock is only held to register the question: capture and network run
+// outside of it, so a new question (or the push-to-talk key) interrupts a
+// stuck request immediately instead of waiting for its timeout.
 func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Capture) (turn Turn, err error) {
 	defer func() {
 		if err != nil {
@@ -103,17 +129,30 @@ func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Captu
 	}
 
 	a.askMu.Lock()
-	defer a.askMu.Unlock()
 	a.interruptLocked()
 	ctx, cancel := context.WithCancel(a.ctx)
+	done := make(chan struct{})
+	a.askCancel, a.askDone = cancel, done
 	a.askID++
 	turn = Turn{ID: a.askID, Capture: capt}
+	a.askMu.Unlock()
+
+	// From here, every exit must end with finish(done).
+	interrupted := func() bool { return ctx.Err() != nil && a.ctx.Err() == nil }
+	fail := func(e error) (Turn, error) {
+		cancel()
+		a.finish(done)
+		if interrupted() {
+			// Superseded by a newer question: not an error for the user.
+			return Turn{ID: turn.ID, Interrupted: true}, nil
+		}
+		return Turn{}, e
+	}
 
 	if frame == nil && withScreen {
 		frame, turn.Capture, err = a.capture(ctx)
 		if err != nil {
-			cancel()
-			return Turn{}, err
+			return fail(err)
 		}
 	}
 
@@ -135,8 +174,7 @@ func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Captu
 	})
 	stream, err := llm.Stream(ctx, system, history)
 	if err != nil {
-		cancel()
-		return Turn{}, err
+		return fail(err)
 	}
 	a.debugf("ai: request accepted in %v", time.Since(start))
 
@@ -148,8 +186,6 @@ func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Captu
 	a.history = append(a.history, question)
 	a.convMu.Unlock()
 
-	done := make(chan struct{})
-	a.askCancel, a.askDone = cancel, done
 	go a.answer(ctx, cancel, done, turn.ID, stream, start, cfg.Voice.ReadAnswers)
 	return turn, nil
 }
@@ -157,7 +193,7 @@ func (a *App) ask(text string, withScreen bool, frame *vision.Frame, capt *Captu
 // answer forwards the stream to the UI and, sentence by sentence, to the
 // voice, then records the reply in the history.
 func (a *App) answer(ctx context.Context, cancel context.CancelFunc, done chan struct{}, id int, stream <-chan ai.Chunk, start time.Time, readAloud bool) {
-	defer close(done)
+	defer a.finish(done)
 	defer cancel()
 
 	sentences := make(chan string, 16)

@@ -26,8 +26,12 @@ const (
 	retryDelay = 800 * time.Millisecond
 
 	// Without response headers after this delay, the model is considered
-	// saturated: better to tell the user than to hang.
-	headerTimeout = 20 * time.Second
+	// saturated (the free tier queues requests for tens of seconds).
+	headerTimeout = 10 * time.Second
+
+	// Used when the chosen model is saturated: the fastest one, which has
+	// its own free-tier quota.
+	FallbackGeminiModel = "gemini-3.5-flash-lite"
 )
 
 // Gemini calls the Google Generative Language REST API (streamGenerateContent
@@ -40,6 +44,11 @@ type Gemini struct {
 
 	thinkingLevel string
 	noThinking    atomic.Bool
+
+	// fallback replaces model for one request when it is saturated
+	// (timeout, 503, 429). OnFallback, if set, is told about it.
+	fallback   string
+	OnFallback func(from, to string, reason error)
 }
 
 // NewGemini creates a client; empty model and baseURL select the defaults.
@@ -58,6 +67,7 @@ func NewGemini(apiKey, model, baseURL, thinking string) *Gemini {
 		model:         model,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		thinkingLevel: thinking,
+		fallback:      FallbackGeminiModel,
 		// No global timeout: a stream may legitimately last a while; the
 		// caller's context bounds it.
 		client: &http.Client{Transport: &http.Transport{
@@ -152,14 +162,32 @@ func (g *Gemini) Stream(ctx context.Context, system string, history []Message) (
 	return ch, nil
 }
 
+// errSaturated wraps the failures that justify trying the fallback model.
+type errSaturated struct{ err error }
+
+func (e errSaturated) Error() string { return e.err.Error() }
+func (e errSaturated) Unwrap() error { return e.err }
+
 func (g *Gemini) post(ctx context.Context, system string, history []Message) (*http.Response, error) {
+	resp, err := g.postModel(ctx, g.model, system, history)
+	var sat errSaturated
+	if err == nil || !errors.As(err, &sat) || g.fallback == "" || g.fallback == g.model || ctx.Err() != nil {
+		return resp, err
+	}
+	if g.OnFallback != nil {
+		g.OnFallback(g.model, g.fallback, err)
+	}
+	return g.postModel(ctx, g.fallback, system, history)
+}
+
+func (g *Gemini) postModel(ctx context.Context, model, system string, history []Message) (*http.Response, error) {
 	retried := false
 	for {
 		body, err := g.body(system, history)
 		if err != nil {
 			return nil, err
 		}
-		url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, g.model)
+		url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", g.baseURL, model)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -172,7 +200,7 @@ func (g *Gemini) post(ctx context.Context, system string, history []Message) (*h
 		case err != nil && ctx.Err() != nil:
 			return nil, ctx.Err()
 		case err != nil && isTimeout(err):
-			return nil, fmt.Errorf("%s ne répond pas (modèle saturé ?) : essaie un autre modèle via SPARK_LLM_MODEL", g.model)
+			return nil, errSaturated{fmt.Errorf("%s ne répond pas (modèle saturé) : réessaie ou choisis un autre modèle dans les paramètres", model)}
 		case err != nil:
 			return nil, fmt.Errorf("Gemini injoignable : %w", err)
 		case resp.StatusCode == http.StatusOK:
@@ -196,7 +224,11 @@ func (g *Gemini) post(ctx context.Context, system string, history []Message) (*h
 				return nil, ctx.Err()
 			}
 		}
-		return nil, friendlyError(resp.StatusCode, apiErr)
+		err = friendlyError(resp.StatusCode, apiErr)
+		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
+			err = errSaturated{err}
+		}
+		return nil, err
 	}
 }
 

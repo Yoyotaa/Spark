@@ -172,6 +172,7 @@ export namespace app {
 	export class Turn {
 	    id: number;
 	    capture?: Capture;
+	    interrupted?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Turn(source);
@@ -181,6 +182,7 @@ export namespace app {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.capture = this.convertValues(source["capture"], Capture);
+	        this.interrupted = source["interrupted"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

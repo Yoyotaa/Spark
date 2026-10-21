@@ -56,11 +56,7 @@ func (a *App) proactiveFree() bool {
 	if listening {
 		return false
 	}
-	if !a.askMu.TryLock() {
-		return false
-	}
-	defer a.askMu.Unlock()
-	return a.askCancel == nil
+	return !a.busy()
 }
 
 // screenChanged compares JPEG sizes: a cheap but effective signal (a

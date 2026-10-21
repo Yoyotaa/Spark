@@ -201,10 +201,16 @@ func (a *App) newProvider(provider string) (ai.Provider, error) {
 			baseURL = a.env.BaseURL
 		}
 	}
-	return ai.New(ai.Config{
+	p, err := ai.New(ai.Config{
 		Provider: provider, APIKey: key, Model: model, BaseURL: baseURL,
 		Thinking: s.Thinking, Fallback: s.Fallback,
 	})
+	if g, ok := p.(*ai.Gemini); ok {
+		g.OnFallback = func(from, to string, reason error) {
+			log.Printf("ai: %s saturé (%v), réponse via %s", from, reason, to)
+		}
+	}
+	return p, err
 }
 
 // registerHotkeys replaces the global shortcuts, push-to-talk included.

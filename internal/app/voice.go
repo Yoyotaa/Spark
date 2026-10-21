@@ -403,6 +403,9 @@ func (v *voice) onFinal(text string) {
 		v.onError(err)
 		return
 	}
+	if turn.Interrupted {
+		return // the user already asked something else
+	}
 	v.a.emit(EventVoiceTurn, VoiceTurn{Text: text, Turn: turn})
 }
 

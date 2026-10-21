@@ -266,3 +266,50 @@ func TestAudioThreadNeverBlocks(t *testing.T) {
 		return b == 1
 	})
 }
+
+// stuckLLM never answers until its context is cancelled (a saturated API).
+type stuckLLM struct{ started chan struct{} }
+
+func (s *stuckLLM) Name() string                                 { return "stuck" }
+func (s *stuckLLM) ListModels(context.Context) ([]string, error) { return nil, nil }
+func (s *stuckLLM) Stream(ctx context.Context, _ string, _ []ai.Message) (<-chan ai.Chunk, error) {
+	close(s.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestPushToTalkInterruptsAStuckRequest(t *testing.T) {
+	a, in, _, _ := newVoiceApp(t, config.Defaults().Mic)
+	stuck := &stuckLLM{started: make(chan struct{})}
+	a.llm = stuck
+
+	result := make(chan Turn, 1)
+	go func() {
+		turn, err := a.Ask("Que vois-tu ?", false)
+		if err != nil {
+			t.Errorf("an interrupted question is not an error: %v", err)
+		}
+		result <- turn
+	}()
+	<-stuck.started
+
+	start := time.Now()
+	a.voice.pressPTT() // must not wait for the network timeout
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("push-to-talk waited %v for the stuck request", d)
+	}
+	if b, _, _ := in.counts(); b != 1 {
+		t.Fatal("the mic must open right away")
+	}
+	if turn := <-result; !turn.Interrupted {
+		t.Fatalf("the stuck question should report Interrupted, got %+v", turn)
+	}
+}
+
+func TestNotBusyAfterAnAnswer(t *testing.T) {
+	a, _, _, _ := newVoiceApp(t, config.Defaults().Mic)
+	if _, err := a.Ask("Bonjour", false); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "answer finished", func() bool { return !a.busy() })
+}
