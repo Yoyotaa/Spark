@@ -8,6 +8,7 @@ package selfresp
 #import <Foundation/Foundation.h>
 #include <spawn.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 extern char **environ;
 
@@ -34,9 +35,19 @@ static int sparkSpawnDisclaimed(const char *path, char **argv, pid_t *pid) {
 	return rc;
 }
 
-static char *sparkBundleID(void) {
-	NSString *id = [[NSBundle mainBundle] bundleIdentifier];
-	return id ? strdup(id.UTF8String) : NULL;
+static int sparkInBundle(void) {
+	return [[NSBundle mainBundle] bundleIdentifier] != nil ? 1 : 0;
+}
+
+// Also private, and the ground truth: which process macOS holds
+// responsible for this one (its own pid when it already is).
+pid_t responsibility_get_pid_responsible_for_pid(pid_t pid) __attribute__((weak_import));
+
+static int sparkResponsibleForSelf(void) {
+	if (responsibility_get_pid_responsible_for_pid == NULL) {
+		return 1; // cannot tell: do not relaunch
+	}
+	return responsibility_get_pid_responsible_for_pid(getpid()) == getpid() ? 1 : 0;
 }
 */
 import "C"
@@ -49,19 +60,11 @@ import (
 	"unsafe"
 )
 
-// launchedByAnotherApp: LaunchServices sets __CFBundleIdentifier to the app
-// that started the process (its own id when opened from the Finder).
+// launchedByAnotherApp: another app (the terminal's host: GoLand,
+// Terminal...) is responsible for this process. Asked to macOS directly:
+// terminals do not reliably pass hints such as __CFBundleIdentifier.
 func launchedByAnotherApp() bool {
-	launcher := os.Getenv("__CFBundleIdentifier")
-	if launcher == "" {
-		return false
-	}
-	own := C.sparkBundleID()
-	if own == nil {
-		return false // not running from an .app bundle
-	}
-	defer C.free(unsafe.Pointer(own))
-	return launcher != C.GoString(own)
+	return C.sparkInBundle() == 1 && C.sparkResponsibleForSelf() == 0
 }
 
 // Relaunch re-executes Spark as its own responsible process when needed.
