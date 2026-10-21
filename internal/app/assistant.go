@@ -274,8 +274,13 @@ func (a *App) capture(parent context.Context) (*vision.Frame, *Capture, error) {
 
 	f, err := a.vision.Capture(ctx)
 	if errors.Is(err, vision.ErrPermission) {
-		a.requestScreenPermission()
-		return nil, nil, errors.New("autorise Spark dans Réglages Système › Confidentialité › Enregistrement de l'écran, puis relance l'app")
+		// macOS shows its dialog once; granting only takes effect after a
+		// restart, so asking again on every question is pointless.
+		if a.screenAsked.CompareAndSwap(false, true) {
+			a.requestScreenPermission()
+			return nil, nil, errors.New("autorise Spark dans Réglages Système › Confidentialité › Enregistrement de l'écran, puis relance Spark")
+		}
+		return nil, nil, errors.New("capture d'écran non autorisée : si Spark est coché dans Réglages Système › Enregistrement de l'écran, quitte et relance Spark (icône ✦ › Quitter)")
 	}
 	if err != nil {
 		return nil, nil, err

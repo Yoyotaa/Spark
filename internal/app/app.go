@@ -81,6 +81,8 @@ type App struct {
 	// closing: the webview is being torn down. Events sent then reach a
 	// dead WKWebView and crash in Wails' ExecJS (seen when quitting).
 	closing atomic.Bool
+	// screenAsked: the screen recording dialog was shown this session.
+	screenAsked atomic.Bool
 }
 
 // emit sends an event to the frontend. Serialized: events come from many
