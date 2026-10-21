@@ -485,3 +485,22 @@ func (a *App) requestPermissions(done func(ok bool)) {
 }
 
 const permissionTimeout = 90 * time.Second
+
+// requestScreenPermission shows macOS' screen recording request with the UI
+// stepped aside. Granting it happens in System Settings and takes effect at
+// the next launch: the UI comes back after a while.
+func (a *App) requestScreenPermission() {
+	if a.overlay != nil {
+		a.overlay.Yield(true)
+	}
+	a.emit(EventPermission, true)
+	vision.RequestPermission()
+	time.AfterFunc(screenPermissionDelay, func() {
+		if a.overlay != nil {
+			a.overlay.Yield(false)
+		}
+		a.emit(EventPermission, false)
+	})
+}
+
+const screenPermissionDelay = 30 * time.Second

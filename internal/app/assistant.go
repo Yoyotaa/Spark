@@ -274,7 +274,7 @@ func (a *App) capture(parent context.Context) (*vision.Frame, *Capture, error) {
 
 	f, err := a.vision.Capture(ctx)
 	if errors.Is(err, vision.ErrPermission) {
-		vision.RequestPermission()
+		a.requestScreenPermission()
 		return nil, nil, errors.New("autorise Spark dans Réglages Système › Confidentialité › Enregistrement de l'écran, puis relance l'app")
 	}
 	if err != nil {

@@ -53,8 +53,12 @@ static int sparkResponsibleForSelf(void) {
 import "C"
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -82,6 +86,7 @@ func Relaunch() (code int, relaunched bool) {
 	if err != nil {
 		return 0, false
 	}
+	signForDev(exe)
 	os.Setenv(envDisclaimed, "1")
 
 	cpath := C.CString(exe)
@@ -116,6 +121,27 @@ func Relaunch() (code int, relaunched bool) {
 		return 128 + int(status.Signal()), true
 	}
 	return status.ExitStatus(), true
+}
+
+// devIdentity is created by scripts/dev-cert.sh.
+const devIdentity = "Spark Dev"
+
+// signForDev re-signs the bundle with the stable "Spark Dev" identity when
+// it exists. Development builds are signed ad hoc with a new signature at
+// every rebuild, and macOS forgets the permissions each time. The running
+// executable is not affected: codesign writes a new file.
+func signForDev(exe string) {
+	out, err := exec.Command("security", "find-identity", "-v", "-p", "codesigning").Output()
+	if err != nil || !strings.Contains(string(out), `"`+devIdentity+`"`) {
+		return
+	}
+	bundle := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // .app/Contents/MacOS/x
+	if filepath.Ext(bundle) != ".app" {
+		return
+	}
+	if msg, err := exec.Command("codesign", "--force", "--deep", "-s", devIdentity, bundle).CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "selfresp: signature %s impossible : %v %s\n", devIdentity, err, msg)
+	}
 }
 
 // watchParent ends the relaunched app if its parent dies: `wails dev`

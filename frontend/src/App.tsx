@@ -332,7 +332,7 @@ export default function App() {
       {permissionPending && (
         <div className="fixed top-6 left-1/2 flex -translate-x-1/2 animate-panel-in items-center gap-3 rounded-xl border border-spark-cyan/30 bg-panel px-4 py-2.5 text-[12.5px] text-slate-100 shadow-2xl backdrop-blur-xl">
           <span className="size-2 animate-pulse rounded-full bg-spark-cyan" />
-          Réponds à la fenêtre de macOS pour autoriser le micro et la reconnaissance vocale.
+          Réponds à la fenêtre de macOS pour autoriser Spark (micro, reconnaissance vocale ou capture d’écran).
         </div>
       )}
       <div hidden={permissionPending}>
