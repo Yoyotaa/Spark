@@ -97,27 +97,13 @@ static void sparkSetIgnoreMouse(int ignore) {
 	});
 }
 
-// Permission dialogs of macOS sit below the status-bar level the overlay
-// uses: step down to a normal window while one is shown.
-static BOOL sparkYielding = NO;
-
-static void sparkYield(int yield) {
-	dispatch_async(dispatch_get_main_queue(), ^{
-		sparkYielding = yield ? YES : NO;
-		[sparkWindow setLevel:(yield ? NSNormalWindowLevel : NSStatusWindowLevel)];
-		if (!yield) {
-			[sparkWindow orderFrontRegardless];
-		}
-	});
-}
-
 // Self-healing: put the overlay back on top if anything (permission
 // dialogs, Spaces, full-screen apps, activation changes) demoted or hid it.
 // Returns a bit mask of what was repaired: 1 level, 2 ordering.
 static int sparkEnsureFront(void) {
 	__block int fixed = 0;
 	sparkOnMain(^{
-		if (sparkWindow == nil || sparkYielding) {
+		if (sparkWindow == nil) {
 			return;
 		}
 		if (sparkWindow.level != NSStatusWindowLevel) {
@@ -184,13 +170,5 @@ func (darwinPlatform) setIgnoreMouse(ignore bool) {
 
 func (darwinPlatform) focus()        { C.sparkFocus() }
 func (darwinPlatform) restoreFocus() { C.sparkRestoreFocus() }
-
-func (darwinPlatform) yield(y bool) {
-	v := C.int(0)
-	if y {
-		v = 1
-	}
-	C.sparkYield(v)
-}
 
 func (darwinPlatform) ensureFront() int { return int(C.sparkEnsureFront()) }

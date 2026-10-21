@@ -52,6 +52,7 @@ export default function App() {
   const [visible, setVisible] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [permissionPending, setPermissionPending] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [waiting, setWaiting] = useState(false)
@@ -108,6 +109,7 @@ export default function App() {
 
   useEffect(() => bridge.onToggleChat(() => setChatOpen((o) => !o)), [])
   useEffect(() => bridge.onOpenSettings(() => setSettingsOpen(true)), [])
+  useEffect(() => bridge.onPermission(setPermissionPending), [])
   useEffect(
     () =>
       bridge.onVisibility((v) => {
@@ -303,6 +305,16 @@ export default function App() {
   // Everything outside [data-interactive] elements is click-through.
   return (
     <main className="pointer-events-none fixed inset-0" hidden={!visible}>
+      {/* macOS permission dialog pending: everything steps aside (the
+          window is click-through) so the dialog stays visible and
+          clickable even below the overlay. */}
+      {permissionPending && (
+        <div className="fixed top-6 left-1/2 flex -translate-x-1/2 animate-panel-in items-center gap-3 rounded-xl border border-spark-cyan/30 bg-panel px-4 py-2.5 text-[12.5px] text-slate-100 shadow-2xl backdrop-blur-xl">
+          <span className="size-2 animate-pulse rounded-full bg-spark-cyan" />
+          Réponds à la fenêtre de macOS pour autoriser le micro et la reconnaissance vocale.
+        </div>
+      )}
+      <div hidden={permissionPending}>
       <div ref={anchor} className="pointer-events-auto absolute top-0 left-0 will-change-transform">
         <Orb size={size} open={chatOpen} speaking={speaking} listening={voiceState === 'listening'} handlers={drag} />
 
@@ -356,6 +368,7 @@ export default function App() {
         />
         </Guard>
       )}
+      </div>
     </main>
   )
 }

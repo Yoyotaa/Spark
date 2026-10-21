@@ -463,11 +463,17 @@ func (a *App) requestPermissions(done func(ok bool)) {
 		audio.RequestPermissions(done)
 		return
 	}
+	// The UI steps aside (hidden, click-through) until the dialogs are
+	// answered, or after a while in any case.
 	a.overlay.Yield(true)
-	// The overlay comes back on top when the dialogs are answered, or
-	// after a while in any case: never leave it buried.
+	a.emit(EventPermission, true)
 	var once sync.Once
-	restore := func() { once.Do(func() { a.overlay.Yield(false) }) }
+	restore := func() {
+		once.Do(func() {
+			a.overlay.Yield(false)
+			a.emit(EventPermission, false)
+		})
+	}
 	timer := time.AfterFunc(permissionTimeout, restore)
 	audio.RequestPermissions(func(ok bool) {
 		timer.Stop()

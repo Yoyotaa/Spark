@@ -255,5 +255,13 @@ phrase d'avertissement.
 - **Windows non testé sur machine réelle** : overlay, capture GDI, micro
   waveIn, lecteur waveOut et voix SAPI compilent et suivent la doc Win32, mais
   n'ont jamais tourné sur un PC. Premier test à faire.
+- **Autorisations et terminal** : macOS attribue les demandes d'autorisation
+  d'un processus lancé depuis un terminal à l'app qui héberge ce terminal
+  (GoLand, Terminal…). Spark se relance donc en se déclarant responsable de
+  lui-même (`internal/selfresp`, `responsibility_spawnattrs_setdisclaim`) :
+  les demandes portent son nom et son `Info.plist`. Pendant une demande,
+  l'overlay devient entièrement traversable et masque son interface, sans
+  jamais changer de niveau (l'abaisser le faisait disparaître derrière les
+  autres fenêtres).
 - **macOS minimum** : 12.3 pour lancer l'app (ScreenCaptureKit est lié), 14 pour
   la capture.

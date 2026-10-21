@@ -29,9 +29,6 @@ type platform interface {
 	// had it; restoreFocus hands it back.
 	focus()
 	restoreFocus()
-	// yield lowers the window (true) so OS dialogs appear above it, and
-	// restores it (false).
-	yield(y bool)
 	// ensureFront puts the window back on top if needed and reports what
 	// it repaired (0: nothing).
 	ensureFront() int
@@ -61,8 +58,9 @@ type Controller struct {
 	// a hotkey), regardless of the cursor position.
 	captured atomic.Bool
 	// paused stops cursor polling and keeps the window click-through, used
-	// while the overlay is hidden.
-	paused atomic.Bool
+	// while the overlay is hidden; yielding does the same during OS dialogs.
+	paused   atomic.Bool
+	yielding atomic.Bool
 }
 
 func NewController() *Controller {
@@ -110,7 +108,7 @@ func (c *Controller) keepFront(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		if c.paused.Load() {
+		if c.paused.Load() || c.yielding.Load() {
 			continue
 		}
 		if fixed := c.native.ensureFront(); fixed != 0 && c.OnRepair != nil {
@@ -136,10 +134,13 @@ func (c *Controller) Focus() {
 	c.native.focus()
 }
 
-// Yield lets OS dialogs (permissions) show above the overlay; call again
-// with false once they are answered.
+// Yield makes the whole window click-through while an OS dialog (a
+// permission request) must be reachable: the dialog may sit below the
+// overlay, and stays visible and clickable through its transparent pixels
+// as long as the UI is hidden. The window level is never touched (lowering
+// it let other apps' windows bury the overlay).
 func (c *Controller) Yield(y bool) {
-	c.native.yield(y)
+	c.yielding.Store(y)
 }
 
 // RestoreFocus gives keyboard focus back to the previously active app.
@@ -177,7 +178,7 @@ func (c *Controller) loop(ctx context.Context) {
 			t.Reset(d)
 		}
 
-		if c.paused.Load() {
+		if c.paused.Load() || c.yielding.Load() {
 			if !ignoring {
 				c.setIgnore(true)
 				ignoring = true

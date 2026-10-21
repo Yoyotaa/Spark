@@ -27,10 +27,11 @@ const (
 	EventToggleChat   = "aria:toggle-chat"
 	EventVisibility   = "spark:visibility"
 	EventOpenSettings = "spark:open-settings"
-	EventSay          = "aria:say"      // text A.R.I.A is saying
-	EventSpeaking     = "aria:speaking" // bool, voice playing
-	EventDelta        = "aria:delta"    // Delta, streamed answer text
-	EventDone         = "aria:done"     // Done, end of an answer
+	EventPermission   = "spark:permission" // bool, an OS permission dialog is pending
+	EventSay          = "aria:say"         // text A.R.I.A is saying
+	EventSpeaking     = "aria:speaking"    // bool, voice playing
+	EventDelta        = "aria:delta"       // Delta, streamed answer text
+	EventDone         = "aria:done"        // Done, end of an answer
 )
 
 type App struct {

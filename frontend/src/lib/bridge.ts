@@ -11,6 +11,7 @@ const inWails = typeof window !== 'undefined' && 'go' in window
 const EventToggleChat = 'aria:toggle-chat'
 const EventVisibility = 'spark:visibility'
 const EventOpenSettings = 'spark:open-settings'
+const EventPermission = 'spark:permission'
 const EventSay = 'aria:say'
 const EventSpeaking = 'aria:speaking'
 const EventDelta = 'aria:delta'
@@ -187,6 +188,8 @@ export async function isDebug(): Promise<boolean> {
 
 /** Global hotkey ⌥⇧A. */
 export const onToggleChat = (cb: () => void) => on(EventToggleChat, cb)
+/** An OS permission dialog is pending: the UI must step aside. */
+export const onPermission = (cb: (pending: boolean) => void) => on(EventPermission, cb)
 /** Global hotkey: open the settings. */
 export const onOpenSettings = (cb: () => void) => on(EventOpenSettings, cb)
 /** Global hotkey ⌥⇧H. */

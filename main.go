@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -13,12 +14,19 @@ import (
 	"spark/internal/app"
 	"spark/internal/config"
 	"spark/internal/overlay"
+	"spark/internal/selfresp"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
+	// Before anything touches AppKit: on macOS, become the owner of our own
+	// privacy permissions when launched from a terminal (see selfresp).
+	if code, relaunched := selfresp.Relaunch(); relaunched {
+		os.Exit(code)
+	}
+
 	settings, err := config.OpenStore()
 	if err != nil {
 		log.Printf("settings: %v (defaults used)", err)
